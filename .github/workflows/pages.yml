@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -34,13 +35,10 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if [ "$TAG" = "$LIVE" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then echo "go=0" >> "$GITHUB_OUTPUT"; else echo "go=1" >> "$GITHUB_OUTPUT"; fi
 
-  deploy:
+  build:
     needs: check
     if: needs.check.outputs.go == '1'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: Extraire la partie web de l'APK
         env:
@@ -53,9 +51,16 @@ jobs:
           rm -rf site/ag            # modèle Ahegao : chargé depuis son projet d'origine
           rm -f site/leash.html site/screen.html
           echo "${{ needs.check.outputs.tag }}" > site/version.txt
-          touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5
