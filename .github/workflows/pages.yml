@@ -1,0 +1,61 @@
+# Version web de BPlaysure (GitHub Pages)
+# Toutes les heures : si une nouvelle version est publiée, extrait la partie web de son APK et la met en ligne.
+name: Version web
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.c.outputs.tag }}
+      go: ${{ steps.c.outputs.go }}
+    steps:
+      - id: c
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          OWNER=${GITHUB_REPOSITORY%%/*}; NAME=${GITHUB_REPOSITORY#*/}
+          LIVE=$(curl -fsSL "https://${OWNER,,}.github.io/${NAME}/version.txt" 2>/dev/null || true)
+          echo "Dernière version : $TAG · en ligne : ${LIVE:-aucune}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ "$TAG" = "$LIVE" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then echo "go=0" >> "$GITHUB_OUTPUT"; else echo "go=1" >> "$GITHUB_OUTPUT"; fi
+
+  deploy:
+    needs: check
+    if: needs.check.outputs.go == '1'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Extraire la partie web de l'APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ needs.check.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir apk
+          unzip -q apk/*.apk 'assets/www/*' -d x
+          mkdir site
+          cp -r x/assets/www/. site/
+          rm -rf site/ag            # modèle Ahegao : chargé depuis son projet d'origine
+          rm -f site/leash.html site/screen.html
+          echo "${{ needs.check.outputs.tag }}" > site/version.txt
+          touch site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
