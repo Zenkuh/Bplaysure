@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Ahegao Detector</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .camWrap{position:relative}
+  .camWrap video{max-height:none}
+  #faceOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #agBanner.on{background:#3a1430;color:#ff7eb6}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Ahegao Detector</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="agBanner" style="font-size:16px">📷 Démarre la caméra</div>
+    <div class="stat"><span>Ahegao</span><div class="meter" id="agMeter"><div id="agBar" class="accC"></div></div><span id="agVal">—</span></div>
+    <div class="stat"><span>Sans ahegao</span><div class="meter"><div id="noBar" class="warnC"></div></div><span id="noVal">0 s</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips"><span>D'affilée <b id="streakT">0.0</b> s</span><span>Record <b id="bestT">0</b> s</span><span>Cumul <b id="totT">0</b> s</span><span data-need="stim">Shocks <b id="shockN">0</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secDetect" open>
+    <summary>👁️ Détection <small id="engSum"></small></summary>
+    <div class="body">
+      <div class="row">
+        <select id="facing"><option value="user">Caméra avant</option><option value="environment">Caméra arrière</option></select>
+        <button id="camBtn" class="primary">Démarrer la caméra</button>
+      </div>
+      <div class="camWrap"><video id="video" autoplay playsinline muted></video><canvas id="faceOv"></canvas></div>
+      <p class="muted" id="aiInfo">Chargement de l'IA…</p>
+      <label class="f"><span>Moteur de reconnaissance</span>
+        <select id="engine">
+          <option value="auto" selected>Les deux (réseau ahegao + expressions)</option>
+          <option value="model">Réseau ahegao-detector seul</option>
+          <option value="mp">Expressions du visage seules (yeux, bouche, langue)</option>
+          <option value="sim">Simulation (test)</option>
+        </select>
+      </label>
+      <label class="f" id="simWrap"><span>Score simulé</span><input id="simVal" type="range" min="0" max="100" value="0"></label>
+      <label class="f"><span>Seuil : ahegao reconnu au-dessus de (%)</span><input id="thr" type="number" min="20" max="95" value="60"></label>
+      <label class="f"><span>À tenir pour être validé (ms)</span><input id="confirmMs" type="number" min="0" max="3000" step="50" value="400"></label>
+      <label class="f"><span>Lissage</span><input id="smooth" type="range" min="0" max="90" value="50"></label>
+      <p class="muted">Visage bien éclairé, de face, en entier dans l'image. Ahegao = yeux révulsés vers le haut, bouche grande ouverte, langue sortie. Tout est analysé sur le téléphone : aucune image n'est envoyée.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secVib" data-need="vib">
+    <summary>〰️ Ahegao → vibration</summary>
+    <div class="body">
+      <label class="f"><span>Vibration quand l'ahegao est reconnu (%)</span><input id="vibOn" type="number" min="0" max="100" value="50"></label>
+      <label class="f"><span>+ vibration par seconde tenue (%)</span><input id="vibRamp" type="number" min="0" max="50" value="4"></label>
+      <label class="f"><span>Vibration sinon (%)</span><input id="vibOff" type="number" min="0" max="100" value="0"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Pas d'ahegao → shock</summary>
+    <div class="body">
+      <label class="f"><span>Shock si pas d'ahegao depuis (s)</span><input id="graceS" type="number" min="2" max="600" value="15"></label>
+      <label class="f"><span>Intensité du shock (%)</span><input id="stimLvl" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>Durée du shock (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="500"></label>
+      <label class="f"><span>Pause entre deux shocks (s)</span><input id="stimCd" type="number" min="2" max="120" value="5"></label>
+      <label class="f"><span>Escalade (+% par shock consécutif)</span><input id="stimEsc" type="number" min="0" max="20" value="2"></label>
+      <label class="f"><span>Visage introuvable compte comme « pas d'ahegao »</span><input id="lostIsNo" type="checkbox"></label>
+      <p class="muted">Sinon, sortir du champ met le compteur en pause : jamais de shock si la caméra ne voit rien (caméra coupée, mauvaise lumière).</p>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="20"></label>
+      <label class="f"><span>Signaux sonores</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Consignes vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="face.js"></script>
+<script>
+"use strict";
+/* ====================================================================
+ * Caméra et IA
+ * ==================================================================== */
+let stream = null;
+async function camToggle(){
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; $("video").srcObject = null; $("camBtn").textContent = "Démarrer la caméra"; return; }
+  try { stream = await openCamera($("video"), $("facing").value); $("camBtn").textContent = "Arrêter la caméra"; log("Caméra démarrée."); }
+  catch (e) { log("Caméra : " + e.message); }
+}
+$("camBtn").onclick = camToggle;
+$("facing").onchange = async () => { if (stream) { await camToggle(); await camToggle(); } };
+
+function aiInfo(){
+  const f = { ready: "✅ prête", loading: "⏳ chargement…", error: "⚠ indisponible", off: "—" };
+  $("aiInfo").innerHTML = `IA visage (MediaPipe) : <b>${f[FaceAI.state]}</b> · réseau ahegao-detector : <b>${f[AgNet.state]}</b>`
+    + (AgNet.state === "error" && FaceAI.state === "ready" ? "<br>Le réseau n'est pas dans cette version : seules les expressions du visage sont utilisées." : "")
+    + (FaceAI.state === "error" ? "<br>⚠ Sans l'IA visage, seule la simulation fonctionne dans cette version." : "");
+  $("engSum").textContent = $("engine").options[$("engine").selectedIndex].text;
+  $("simWrap").classList.toggle("hidden", $("engine").value !== "sim");
+}
+$("engine").onchange = aiInfo;
+Promise.all([FaceAI.load(), AgNet.load()]).then(() => {
+  aiInfo();
+  log(FaceAI.state === "ready" ? "IA visage prête." : "⚠ IA visage indisponible (" + FaceAI.err + ").");
+  log(AgNet.state === "ready" ? "Réseau ahegao prêt." : "Réseau ahegao absent (" + AgNet.err + ") : expressions du visage seules.");
+});
+
+/* Score « expressions » : yeux révulsés + bouche ouverte, langue et sourcils en bonus (0–1) */
+function exprScore(bs){
+  const g = k => bs[k] || 0, n = (v, m) => clamp(v / m, 0, 1);
+  const eyesUp = n((g("eyeLookUpLeft") + g("eyeLookUpRight")) / 2, 0.45);
+  const cross = n((g("eyeLookInLeft") + g("eyeLookInRight")) / 2, 0.5);
+  const jaw = n(g("jawOpen"), 0.45), tongue = n(g("tongueOut"), 0.3), brow = n(g("browInnerUp"), 0.6);
+  const eyes = Math.max(eyesUp, 0.6 * eyesUp + 0.4 * cross);
+  return clamp(0.8 * Math.sqrt(eyes * jaw) + 0.15 * tongue + 0.1 * brow, 0, 1);
+}
+
+let face = null, box = null, raw = 0, score = 0, pModel = null, pExpr = null, lastNet = 0, faceSeen = false;
+function detect(){
+  const eng = $("engine").value, v = $("video");
+  if (eng === "sim") { faceSeen = true; face = null; raw = num("simVal") / 100; return; }
+  face = stream ? FaceAI.detect(v) : null;
+  faceSeen = !!face;
+  if (!face) { box = null; return; }
+  pExpr = exprScore(face.bs);
+  box = FaceAI.box(face, v, 1.0);
+  const t = performance.now();
+  if (AgNet.state === "ready" && eng !== "mp" && t - lastNet > 250) { lastNet = t; pModel = AgNet.fromVideo(v, box); }   // ~4 analyses/s
+  const useNet = AgNet.state === "ready" && eng !== "mp" && pModel != null;
+  raw = eng === "model" ? (useNet ? pModel : pExpr) : useNet ? 0.6 * pModel + 0.4 * pExpr : pExpr;
+}
+
+/* ====================================================================
+ * Moteur (100 ms)
+ * ==================================================================== */
+let isAg = false, aboveSince = 0, belowSince = 0, streak = 0, best = 0, tot = 0, noAg = 0;
+let armedAt = 0, curVib = 0, curStim = 0, shockN = 0, consec = 0, lastShock = 0, shockTimer = null;
+
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) {
+    armedAt = Date.now(); streak = 0; best = 0; tot = 0; noAg = 0; shockN = 0; consec = 0; lastShock = 0;
+    log("Session armée."); Game.start(); Speak.say("Montre-moi ton ahegao");
+  } else {
+    Sched.cancel(shockTimer); curStim = 0; curVib = 0; sendLevel("vib", 0, true); sendLevel("stim", 0, true);
+    Game.end();
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT D'URGENCE"); }
+
+function fireShock(why){
+  const lvl = num("stimLvl") + consec * num("stimEsc"), dur = clamp(num("pulseMs"), 100, 2000);
+  curStim = sendLevel("stim", lvl, true); shockN++; consec++; lastShock = Date.now();
+  log(`⚡ Shock ${Math.round(curStim)} % (${dur} ms) — ${why}`);
+  Sched.cancel(shockTimer); shockTimer = Sched.after(dur, () => { curStim = sendLevel("stim", 0, true); });
+}
+
+let lastTick = performance.now();
+function tick(){
+  const now = performance.now(), dt = Math.min(0.5, (now - lastTick) / 1000); lastTick = now;
+  detect();
+  const a = num("smooth") / 100;
+  if (faceSeen) score = a * score + (1 - a) * raw;
+  const thr = num("thr") / 100, t = Date.now();
+  // reconnaissance avec hystérésis : validé après « confirmMs » au-dessus du seuil, perdu après 300 ms en dessous
+  if (faceSeen && score >= thr) { belowSince = 0; if (!aboveSince) aboveSince = t; if (!isAg && t - aboveSince >= num("confirmMs")) { isAg = true; onAg(true); } }
+  else if (!faceSeen || score < thr - 0.05) { aboveSince = 0; if (!belowSince) belowSince = t; if (isAg && t - belowSince >= 300) { isAg = false; onAg(false); } }
+  else { aboveSince = 0; if (!belowSince) belowSince = t; if (isAg && t - belowSince >= 1500) { isAg = false; onAg(false); } }   // juste sous le seuil : l'ahegao n'est plus tenue
+
+  if (App.armed && !App.suspended) {
+    if (isAg) { streak += dt; tot += dt; noAg = 0; consec = 0; if (streak > best) best = streak; Game.xp(dt); }
+    else { streak = 0; if (faceSeen || $("lostIsNo").checked) noAg += dt; }
+    if (Game.run) { Game.progress(tot); if (Game.run) Game.progress(best, "streak"); }
+    curVib = sendLevel("vib", isAg ? num("vibOn") + num("vibRamp") * streak : num("vibOff"));
+    const g = num("graceS");
+    if (!isAg && noAg >= g - 3 && noAg < g) Speak.say("Ahegao, maintenant !", "warn", 10000);
+    if (Equip.stim && !isAg && noAg >= g && curStim === 0 && t - lastShock >= num("stimCd") * 1000) fireShock(`pas d'ahegao depuis ${Math.floor(noAg)} s`);
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+  draw();
+}
+function onAg(on){
+  if (on) { beep(1175, 80, 2); if (App.armed) Speak.say(["Parfait", "C'est ça", "Garde-la", "Encore"][Math.floor(Math.random() * 4)], "good", 8000); }
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+
+/* ====================================================================
+ * Affichage
+ * ==================================================================== */
+const ov = $("faceOv"), octx = ov.getContext("2d");
+function draw(){
+  const pct = Math.round(score * 100), g = num("graceS");
+  const ban = $("agBanner");
+  ban.textContent = $("engine").value !== "sim" && !stream ? "📷 Démarre la caméra"
+    : !faceSeen ? "❓ Visage introuvable" + (App.armed && !$("lostIsNo").checked ? " · compteur en pause" : "")
+    : isAg ? "😵 Ahegao reconnu !" : "😐 Pas d'ahegao";
+  ban.classList.toggle("on", isAg);
+  $("agBar").style.width = (faceSeen ? pct : 0) + "%"; $("agVal").textContent = faceSeen ? pct + " %" : "—";
+  const m = $("agMeter"); let mk = m.querySelector(".mark"); if (!mk) { mk = document.createElement("div"); mk.className = "mark"; m.appendChild(mk); } mk.style.left = clamp(num("thr"), 0, 100) + "%";
+  $("noBar").style.width = clamp(noAg / Math.max(1, g) * 100, 0, 100) + "%"; $("noVal").textContent = Math.floor(noAg) + " s";
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimBar").style.width = curStim + "%"; $("stimVal").textContent = curStim.toFixed(0);
+  $("streakT").textContent = streak.toFixed(1); $("bestT").textContent = Math.floor(best); $("totT").textContent = Math.floor(tot); $("shockN").textContent = shockN;
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0;
+  $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  // cadre du visage
+  if (ov.width !== ov.clientWidth || ov.height !== ov.clientHeight) { ov.width = ov.clientWidth; ov.height = ov.clientHeight; }
+  octx.clearRect(0, 0, ov.width, ov.height);
+  const v = $("video");
+  if (box && v.videoWidth) {
+    const sx = ov.width / v.videoWidth, sy = ov.height / v.videoHeight;
+    octx.strokeStyle = isAg ? "#ff7eb6" : "#ffffff88"; octx.lineWidth = isAg ? 4 : 2;
+    octx.strokeRect(box.x * sx, box.y * sy, box.w * sx, box.h * sy);
+    octx.fillStyle = isAg ? "#ff7eb6" : "#fff"; octx.font = "bold 15px system-ui";
+    const det = [pModel != null && AgNet.state === "ready" && $("engine").value !== "mp" ? "IA " + Math.round(pModel * 100) + " %" : "", pExpr != null ? "expr. " + Math.round(pExpr * 100) + " %" : ""].filter(Boolean).join(" · ");
+    octx.fillText((isAg ? "AHEGAO " : "") + pct + " %" + (det ? "  (" + det + ")" : ""), box.x * sx + 4, Math.max(16, box.y * sy - 6));
+  }
+}
+
+/* ====================================================================
+ * Initialisation
+ * ==================================================================== */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Ahegao", roleLabels: { vib: "Vibration (ahegao)", stim: "Shock (pas d'ahegao)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la session pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", curVib, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la session pour tester."); fireShock("test"); consec = 0; };
+
+const KEY = "ahegaoCfg";
+const FIELDS = ["facing","engine","thr","confirmMs","smooth","vibOn","vibRamp","vibOff","graceS","stimLvl","pulseMs","stimCd","stimEsc","maxVib","maxStim","sessionMax"];
+const CHECKS = ["lostIsNo", "sound", "voice"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+applyEquip(); aiInfo();
+/* Carrière : seuil de détection et délai avant shock suivent le niveau */
+Game.init("ahegao", {
+  apply: (p, on) => {
+    ["thr", "graceS"].forEach(id => { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; });
+    if (on) { $("thr").value = p.thr; $("graceS").value = p.grace; }
+  },
+});
+/* Aperçu et contrôle pour la télécommande */
+Partner.init("ahegao", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Ahegao", v: faceSeen ? Math.round(score * 100) : 0, max: 100, unit: " %" },
+    phase: $("agBanner").textContent + (App.armed && !isAg ? ` · ${Math.floor(noAg)}/${num("graceS")} s` : ""),
+    chips: [["D'affilée", streak.toFixed(0) + " s"], ["Record", Math.floor(best) + " s"], ["Cumul", Math.floor(tot) + " s"], ["Seuil", num("thr") + " %"], ...(Equip.stim ? [["Shocks", shockN]] : [])],
+  }),
+  actions: () => !App.armed ? [] : [
+    { id: "graceMinus", label: "⏱️ Délai avant shock −5 s" }, { id: "gracePlus", label: "⏱️ Délai avant shock +5 s" },
+    { id: "thrMinus", label: "🎯 Seuil −5 %" }, { id: "thrPlus", label: "🎯 Seuil +5 %" },
+    ...(Partner.can.stim ? [{ id: "shock", label: "⚡ Shock (réglage du mode)" }] : []),
+  ],
+  doAction: id => {
+    if (!App.armed) return;
+    if (id === "graceMinus" || id === "gracePlus") { if ($("graceS").disabled && !Partner.ms) return log("Délai réglé par la carrière."); $("graceS").value = clamp(num("graceS") + (id === "gracePlus" ? 5 : -5), 2, 600); log("🎮 Délai avant shock → " + num("graceS") + " s"); }
+    else if (id === "thrMinus" || id === "thrPlus") { if ($("thr").disabled && !Partner.ms) return log("Seuil réglé par la carrière."); $("thr").value = clamp(num("thr") + (id === "thrPlus" ? 5 : -5), 20, 95); log("🎮 Seuil → " + num("thr") + " %"); }
+    else if (id === "shock" && Partner.can.stim && curStim === 0) fireShock("partenaire");
+  },
+});
+setInterval(tick, 100);
+log("Prêt. Démarre la caméra, vérifie que ton ahegao est bien reconnu (cadre rose), puis « Armer ».");
+</script>
+</body>
+</html>

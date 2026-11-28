@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Télécommande</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  #lvl,#shockLvl{width:100%;max-width:none;height:40px}
+  .big{font-size:40px;font-weight:800;text-align:center;font-variant-numeric:tabular-nums}
+  .sub{font-size:13px;color:var(--mute);text-align:center;margin:-4px 0 6px;min-height:17px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .grid3 button{height:56px;font-size:15px;font-weight:700}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+  .grid2 button{min-height:52px;font-weight:600}
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+  .modes button{min-height:48px}
+  .modes button.cur{background:var(--acc);color:#14001f;font-weight:700;border:none}
+  .presets{display:flex;gap:6px}
+  .presets button{flex:1;padding:8px 0}
+  #armBtn{background:var(--ok);color:#002b0c;border:none;font-weight:700}
+  #disarmBtn{background:#3a2a2a;font-weight:700}
+  #hold{background:var(--acc);color:#14001f;border:none;flex:1.6;user-select:none;-webkit-user-select:none;touch-action:none}
+  #hold.on{background:#e3b6ff;box-shadow:0 0 0 4px #c77dff66}
+  #shockNav,#shockBtn{background:#ff9f1c;color:#2b1400;border:none;font-weight:800}
+  #shockNav.cool,#shockBtn.cool{opacity:.4}
+  #stopR{background:#d62828;color:#fff;border:none}
+  .off{opacity:.4;pointer-events:none}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#2a2a33;margin-left:6px}
+  .badge.armed{background:#173322;color:var(--ok)}
+  .badge.arming{background:#3a2f0c;color:var(--warn)}
+.cardRow{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;background:var(--panel2);border-radius:8px;padding:6px 8px;margin:4px 0;font-size:13px}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu">☰</button>
+    <h1>Télécommande</h1>
+    <span id="relayPill" class="pill">hors ligne</span>
+  </header>
+  <div class="dock">
+    <div class="banner"><span id="modeName">—</span><span id="armBadge" class="badge">—</span></div>
+    <div class="sub" id="phase">Connexion au relais…</div>
+    <div class="stat" id="mainRow"><span id="mainLbl">—</span><div class="meter"><div id="mainBar" class="accC"></div></div><span id="mainVal">—</span></div>
+    <div class="stat"><span>Vibration</span><div class="meter" id="vibMeter"><div id="vibBar" class="vibC"></div><div class="mark" id="vibCapMark"></div></div><span id="vibVal">—</span></div>
+    <div class="stat hidden" id="hrRow"><span>❤️ Cardio</span><canvas id="hrSpark" class="spark" width="300" height="40" style="height:22px;margin:0"></canvas><span id="hrVal">—</span></div>
+    <div class="stat hidden" id="stimRow"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">—</span></div>
+    <div class="chips"><span id="toyChip">Jouet —</span></div>
+    <div id="gDockR" class="hidden" style="margin-top:6px;font-size:13px;color:#ffd166"></div>
+    <div class="chips" id="chips"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card hidden" id="secMs" open>
+    <summary>👑 Master/Sub <small id="msSum"></small></summary>
+    <div class="body">
+      <p id="msText" class="muted"></p>
+      <div class="row"><button id="msAccept" class="primary">Accepter le mode Master/Sub</button><button id="msLeave" class="hidden">Quitter le mode Master/Sub</button></div>
+    </div>
+  </details>
+
+  <details class="card hidden" id="secGameR">
+    <summary>🏆 Progression du Sub <small id="gSumR"></small></summary>
+    <div class="body"><div id="gListR"></div><div id="gRunR"></div><p class="muted">Sauvegardée sur son téléphone. Un défi se lance quand une séance est armée en mode carrière.</p>
+      <details class="sub hidden" id="gEditR"><summary>👑 Modifier les objectifs de carrière</summary>
+        <label class="f"><span>Application</span><select id="gAppR"></select></label>
+        <label class="f"><span>Niveau actuel du Sub</span><input id="gLvlR" type="number" min="1" max="20" value="1"></label>
+        <div class="gEditR muted"><span>Paramètre</span><span>Niv. 1</span><span>Niv. 20</span></div>
+        <div id="gRowsR"><p class="muted">Chargement…</p></div>
+        <p class="muted">Les niveaux intermédiaires suivent la progression entre le niveau 1 et le niveau 20. 🎯 = objectif à atteindre (0 = désactivé). S'applique au prochain défi.</p>
+        <div class="row"><button id="gResetR">Valeurs d'origine</button></div>
+      </details>
+    </div>
+  </details>
+
+  <details class="card" id="secSession" open>
+    <summary>🕹️ Session</summary>
+    <div class="body">
+      <div class="grid2"><button id="armBtn">Armer</button><button id="disarmBtn">Désarmer</button></div>
+      <p class="muted" id="permInfo"></p>
+      <div id="modesBox">
+        <p class="muted" style="margin-bottom:0">Ouvrir une application sur son téléphone :</p>
+        <div class="modes" id="modes"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secActions" open>
+    <summary>🎛️ Contrôle du mode <small id="actSum"></small></summary>
+    <div class="body"><div class="grid2" id="actions"></div></div>
+  </details>
+
+  <details class="card hidden" id="secApp" open>
+    <summary id="appTitle"></summary>
+    <div class="body" id="appBody"></div>
+  </details>
+
+  <details class="card" id="secVib" open>
+    <summary>〰️ Vibration manuelle</summary>
+    <div class="body" id="vibCtl">
+      <div class="big"><span id="lvlVal">40</span> %</div>
+      <input id="lvl" type="range" min="5" max="100" value="40">
+      <div class="presets"><button data-v="15">Effleurer</button><button data-v="40">Doux</button><button data-v="70">Fort</button><button data-v="100">Max</button></div>
+      <p class="muted">% du plafond fixé par le porteur (<b id="vibCapTxt">—</b>). Maintiens le bouton en bas, ou envoie une impulsion :</p>
+      <label class="f"><span>Motif</span>
+        <select id="pat"><option value="">Continu</option><option value="vague">Vague</option><option value="houle">Houle</option><option value="pulsations">Pulsations</option><option value="battement">Battement</option></select>
+      </label>
+      <div class="grid3"><button data-ms="2000">2 s</button><button data-ms="5000">5 s</button><button data-ms="10000">10 s</button></div>
+      <div class="row"><button id="surprise">🎲 Surprise</button></div>
+    </div>
+  </details>
+
+  <details class="card hidden" id="secShock" open>
+    <summary>⚡ Shock (e-stim)</summary>
+    <div class="body">
+      <div class="big"><span id="shockVal">30</span> %</div>
+      <input id="shockLvl" type="range" min="5" max="100" value="30">
+      <p class="muted" id="shockHelp">% du plafond Shock fixé par le porteur (<b id="stimCapTxt">—</b>). 2 s minimum entre deux.</p>
+      <label class="f"><span>Durée</span>
+        <select id="shockMs"><option value="200">0,2 s</option><option value="400" selected>0,4 s</option><option value="700">0,7 s</option><option value="1000">1 s</option>
+          <option value="1500" class="msOnly">1,5 s 👑</option><option value="2000" class="msOnly">2 s 👑</option><option value="3000" class="msOnly">3 s 👑</option></select>
+      </label>
+      <div class="row"><button id="shockBtn">⚡ SHOCK</button></div>
+    </div>
+  </details>
+
+  <details class="card hidden" id="secCfg">
+    <summary>⚙️ Réglages du mode 👑 <small id="cfgSum"></small></summary>
+    <div class="body">
+      <p class="muted">Chaque changement s'applique tout de suite chez ton/ta partenaire. « Sauvegarder » le garde pour les prochaines séances. La sécurité respiratoire de Blow Trainer reste réglable par lui/elle seul·e.</p>
+      <div id="cfgBox"><p class="muted">Chargement…</p></div>
+      <div class="row"><button id="cfgReload">↻ Actualiser</button><button id="cfgSave" class="primary">💾 Sauvegarder sur son téléphone</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLink">
+    <summary>🔑 Liaison <small id="fpSum"></small></summary>
+    <div class="body">
+      <p class="muted">Code de contrôle : <b id="fp">—</b> · relais : <b id="relayTxt">—</b></p>
+      <div class="row"><button id="changeCode">Changer de code (menu)</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="hold">MAINTENIR</button>
+  <button id="shockNav" class="hidden">⚡</button>
+  <button id="stopR">STOP</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script>
+"use strict";
+let peer = null;
+/* Reste actif écran éteint pour recevoir les alertes (service + notification) */
+App.allowBackground = true;
+nativeCall("setBackground", true);
+nativeCall("sensorsStart", JSON.stringify({ accel: false, gps: false, mic: false }));
+
+/* ---------------- Alertes : jouet, armement, porteur en ligne ---------------- */
+let prev = null, wasLive = false, seen = false, navUntil = 0, offlineSince = 0, alertedOffline = false;
+function alertUser(title, text = "", color, system = true){
+  log(title + (text ? " — " + text : ""));
+  toast(title, text, color);
+  if (document.hidden && system) nativeCall("notify", title, text);
+  else beep(880, 120);
+}
+function checkChanges(m){
+  if (prev) {
+    if (!prev.arming && m.arming) alertUser("⏳ Armement dans 3 s", modeName(m.mode), "var(--warn)");
+    if (prev.armed !== m.armed) alertUser(m.armed ? "✅ Session armée" : "⏸️ Session désarmée", modeName(m.mode), m.armed ? "var(--ok)" : "var(--mute)");
+    if (prev.mode === m.mode && !prev.locked && m.locked) alertUser("🔒 Écran du porteur verrouillé", m.armed ? "tu gardes la main" : "", "var(--mute)", false);
+    if (prev.mode === m.mode && prev.locked && !m.locked) alertUser("🔓 Écran du porteur déverrouillé", "", "var(--mute)", false);
+    const pl = prev.game && prev.game.last, nl = m.game && m.game.last;
+    if (nl && (!pl || pl.at !== nl.at)) {
+      if (nl.ok) alertUser(`🏆 Défi réussi : niveau ${nl.to} en ${modeName(nl.app)} !`, "ton Sub progresse", "#ffd166");
+      else alertUser(`Défi niveau ${nl.lvl} non réussi`, modeName(nl.app) + " · " + (nl.why || ""), "var(--mute)", false);
+    }
+    const pr = prev.game && prev.game.run, nr = m.game && m.game.run;
+    if (!pr && nr) alertUser(`🏆 Défi niveau ${nr.lvl} lancé`, modeName(nr.app), "#ffd166", false);
+    const pm = prev.ms || {}, nm = m.ms || {};
+    if (!pm.offered && nm.offered && !nm.active) alertUser("👑 Mode Master/Sub proposé", "ouvre la télécommande pour accepter", "#ffd166");
+    if (!pm.active && nm.active) alertUser("👑 Mode Master/Sub actif", "pleins pouvoirs", "#ffd166");
+    if (pm.active && !nm.active) alertUser("👑 Mode Master/Sub terminé", "retour aux plafonds habituels", "var(--mute)");
+    if (prev.mode !== m.mode) alertUser("📱 " + modeName(m.mode) + " ouvert", "", "var(--acc)", false);
+    const a = prev.toys, b = m.toys;
+    if (b && (!a || prev.mode !== m.mode)) { if (b.on && b.n) alertUser("🔌 Jouet connecté", b.names.join(", "), "var(--ok)"); }
+    else if (a && b) {
+      if (!a.on && b.on) alertUser("🔌 Intiface connecté", b.n ? b.names.join(", ") : "aucun jouet pour l'instant", "var(--ok)");
+      else if (a.on && !b.on) alertUser("⚠️ Intiface déconnecté", "les jouets ne répondent plus", "var(--stim)");
+      else if (b.n > a.n) alertUser("🔌 Jouet connecté", b.names.join(", "), "var(--ok)");
+      else if (b.n < a.n) alertUser("⚠️ Jouet déconnecté", b.n ? "reste : " + b.names.join(", ") : "plus aucun jouet", "var(--stim)");
+    }
+  }
+  prev = m;
+}
+/* En ligne / hors ligne, avec tolérance : un changement d'écran chez le porteur ou une
+   micro-coupure réseau ne déclenchent pas d'alerte. */
+function presence(){
+  const L = !!Link.peerLive, now = Date.now();
+  if (L && !seen) { seen = true; wasLive = true; alertUser("🟢 Porteur en ligne", "", "var(--ok)"); return; }
+  if (!seen) return;
+  if (L) {
+    if (alertedOffline) alertUser("🟢 Porteur de nouveau en ligne", "", "var(--ok)");
+    alertedOffline = false; offlineSince = 0;
+  } else {
+    if (!offlineSince) offlineSince = now;
+    if (!alertedOffline && now > navUntil && now - offlineSince > 5000) {
+      alertedOffline = true; prev = null;
+      alertUser("🔴 Porteur hors ligne", "plus de nouvelles depuis 15 s", "var(--stim)");
+    }
+  }
+  wasLive = L;
+}
+setInterval(presence, 500);
+onNative("stop", () => $("stopR").onclick());   // ARRÊT depuis la notification = STOP chez le porteur
+
+/* ---------------- Liaison ---------------- */
+const code = store.get("bpRemoteCode", ""), brokerKey = store.get("bpRemoteBroker", "emqx");
+if (!code) { location.href = "index.html"; }
+try { $("fp").textContent = Link.fingerprint(code); $("fpSum").textContent = "code " + Link.fingerprint(code); } catch {}
+Link.onStatus = s => {
+  $("relayPill").textContent = s === "connecté" ? "relais ok" : s; $("relayPill").classList.toggle("on", s === "connecté"); $("relayTxt").textContent = s;
+  if (s === "connecté") { log("Relais connecté."); Link.send({ t: "hello" }); }
+};
+Link.onMsg = m => {
+  if (m.t === "st") { checkChanges(m); hrUpdate(m); peer = m; }
+  else if (m.t === "cfg") renderCfg(m);
+  else if (m.t === "gcfg") renderGcfg(m);
+  else if (m.t === "saved") { toast("💾 Réglages sauvegardés", "sur le téléphone de ton/ta partenaire", "var(--ok)"); log("💾 Réglages sauvegardés chez le porteur."); }
+  else if (m.t === "nav") navUntil = Date.now() + 20000;   // le porteur change d'écran
+};
+Link.start(code, "r", BROKERS[brokerKey] || BROKERS.emqx).catch(e => log("Code : " + e.message));
+const hello = () => { if (Link.mq && !Link.peerLive) Link.send({ t: "hello" }); };
+setInterval(hello, 3000);
+// écran éteint : réveil natif → présence, relais, signe de vie
+let lastBg = 0;
+BgHooks.push(() => { const n = Date.now(); if (n - lastBg < 1000) return; lastBg = n; presence(); if (Link.mq) Link.mq.maintain(); hello(); });
+const live = () => Link.peerLive && peer;
+const cmd = (o, msg) => { Link.send(o); if (msg) log(msg); };
+
+/* ---------------- Session ---------------- */
+$("armBtn").onclick = () => cmd({ t: "arm" }, "Armement demandé (3 s de préavis chez le porteur).");
+$("disarmBtn").onclick = () => cmd({ t: "disarm" }, "Désarmement demandé.");
+function renderModes(){
+  const box = $("modes"), list = ["menu", ...(peer.modes || [])], key = list.join() + "|" + peer.mode;
+  if (box.dataset.k === key) return; box.dataset.k = key; box.innerHTML = "";
+  list.forEach(m => {
+    const b = document.createElement("button"); b.textContent = modeLabel(m);
+    if (m === peer.mode) b.className = "cur";
+    b.onclick = () => { if (m !== peer.mode) cmd({ t: "goto", mode: m }, "Ouverture de " + modeName(m) + " demandée."); };
+    box.appendChild(b);
+  });
+}
+function renderActions(){
+  const box = $("actions"), acts = peer.actions || [], key = JSON.stringify(acts);
+  $("secActions").classList.toggle("hidden", !acts.length);
+  $("actSum").textContent = modeName(peer.mode) || "";
+  if (box.dataset.k === key) return; box.dataset.k = key; box.innerHTML = "";
+  acts.forEach(a => {
+    const b = document.createElement("button"); b.textContent = a.label;
+    b.onclick = () => cmd({ t: "action", id: a.id }, "Action : " + a.label);
+    box.appendChild(b);
+  });
+}
+
+/* ---------------- Vibration ---------------- */
+const lvl = () => num("lvl");
+$("lvl").oninput = () => { $("lvlVal").textContent = lvl(); };
+document.querySelectorAll(".presets button").forEach(b => b.onclick = () => { $("lvl").value = b.dataset.v; $("lvl").oninput(); });
+document.querySelectorAll(".grid3 button[data-ms]").forEach(b => b.onclick = () =>
+  cmd({ t: "pulse", lvl: lvl(), ms: +b.dataset.ms, pat: $("pat").value }, `Vibration ${lvl()} % · ${b.textContent}`));
+$("surprise").onclick = () => {
+  const pats = ["", "vague", "houle", "pulsations", "battement"];
+  const l = Math.round(20 + Math.random() * 70), ms = Math.round(1500 + Math.random() * 8500), p = pats[Math.floor(Math.random() * pats.length)];
+  cmd({ t: "pulse", lvl: l, ms, pat: p }, `🎲 Surprise : ${l} % · ${(ms / 1000).toFixed(1)} s`);
+};
+let holdTimer = null;
+function holdStart(e){
+  e.preventDefault(); if (holdTimer) return;
+  $("hold").classList.add("on");
+  const send = () => Link.send({ t: "hold", lvl: lvl() });
+  send(); holdTimer = setInterval(send, 400);
+}
+function holdEnd(){
+  if (!holdTimer) return;
+  clearInterval(holdTimer); holdTimer = null; $("hold").classList.remove("on");
+  Link.send({ t: "stop" });
+}
+$("hold").addEventListener("pointerdown", holdStart);
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => $("hold").addEventListener(ev, holdEnd));
+$("hold").addEventListener("contextmenu", e => e.preventDefault());
+
+/* ---------------- Shock ---------------- */
+let lastShock = 0;
+const msOn = () => !!(live() && peer.ms && peer.ms.active);
+$("shockLvl").oninput = () => { $("shockVal").textContent = num("shockLvl"); };
+function shock(){
+  if (Date.now() - lastShock < (msOn() ? 1000 : 2000)) return;
+  lastShock = Date.now();
+  cmd({ t: "shock", lvl: num("shockLvl"), ms: +$("shockMs").value }, `⚡ Shock ${num("shockLvl")} % · ${$("shockMs").selectedOptions[0].text}`);
+}
+$("shockBtn").onclick = shock; $("shockNav").onclick = shock;
+
+/* ---------------- STOP : coupe tout et désarme ---------------- */
+$("stopR").onclick = () => { holdEnd(); Link.send({ t: "stop" }); Link.send({ t: "disarm" }); log("STOP : vibration coupée et session désarmée."); };
+document.addEventListener("visibilitychange", () => { if (document.hidden) holdEnd(); });
+$("menuBtn").onclick = () => { holdEnd(); Link.send({ t: "stop" }); setTimeout(() => { location.href = "index.html"; }, 150); };
+$("changeCode").onclick = () => { store.set("bpRole", "ctl"); $("menuBtn").onclick(); };
+
+/* ---------------- Master/Sub (accord du partenaire, mémorisé pour ce code) ---------------- */
+const fpKey = (() => { try { return Link.fingerprint(code); } catch { return code; } })();
+const msAccepted = () => !!store.get("bpMsAccepted", {})[fpKey];
+const setMsAccepted = v => { const a = store.get("bpMsAccepted", {}); if (v) a[fpKey] = new Date().toISOString(); else delete a[fpKey]; store.set("bpMsAccepted", a); };
+let msSentAt = 0;
+$("msAccept").onclick = async () => {
+  const ok = await confirmDialog({
+    title: "👑 Accepter le mode Master/Sub ?",
+    html: `<p>Ton/ta partenaire te propose les <b>pleins pouvoirs</b> : vibrations et Shock jusqu'à 100 %, sans plafonds partenaire, et le contrôle de toutes ses sessions.</p>
+      <p>Tu t'engages à respecter ses limites : son <b>ARRÊT</b> coupe tout, et il/elle peut retirer ce mode à tout moment. En cas de doute, arrête et parlez-en.</p>
+      <p class="muted">Ton accord est enregistré sur ce téléphone pour ce code : pas besoin de le refaire à chaque séance.</p>`,
+    check: "J'accepte et je respecterai ses limites et son consentement",
+    ok: "Accepter",
+  });
+  if (!ok) return;
+  setMsAccepted(true); Link.send({ t: "ms_accept" }); msSentAt = Date.now(); log("👑 Accord envoyé.");
+};
+$("msLeave").onclick = () => { setMsAccepted(false); Link.send({ t: "ms_revoke" }); log("👑 Tu as quitté le mode Master/Sub."); };
+function renderMs(){
+  const L = live(), m = L && peer.ms ? peer.ms : null;
+  $("secMs").classList.toggle("hidden", !(m && (m.offered || m.active)));
+  if (!m) return;
+  if (!m.offered && msAccepted()) setMsAccepted(false);             // retiré par le porteur : nouvel accord requis
+  if (m.offered && !m.active && msAccepted() && Date.now() - msSentAt > 4000) { Link.send({ t: "ms_accept" }); msSentAt = Date.now(); }
+  $("secMs").classList.toggle("ms", m.active);
+  $("msSum").textContent = m.active ? "actif" : "proposé";
+  $("msText").textContent = m.active ? "Mode actif : pleins pouvoirs sur les vibrations et le Shock, accord des deux enregistré. Son ARRÊT reste prioritaire."
+    : msAccepted() ? "Accord envoyé, confirmation en cours…" : "Ton/ta partenaire te propose les pleins pouvoirs. Ton accord est nécessaire.";
+  $("msAccept").classList.toggle("hidden", m.active || msAccepted());
+  $("msLeave").classList.toggle("hidden", !m.active);
+}
+
+/* ---------------- Réglages du mode (Maître) ---------------- */
+let cfgMode = null, cfgKey = "";
+function renderCfg(m){
+  cfgMode = m.mode; $("cfgSum").textContent = modeName(m.mode) || "";
+  $("cfgSave").classList.toggle("hidden", !m.canSave);
+  const box = $("cfgBox"), key = m.mode + "|" + m.fields.map(f => f.id).join();
+  if (key === cfgKey) {                                  // mêmes champs : on met à jour les valeurs sans gêner la saisie
+    m.fields.forEach(f => {
+      const el = $("rc_" + f.id); if (!el || el === document.activeElement) return;
+      if (f.type === "check") el.checked = f.value; else el.value = f.value;
+      const v = $("rv_" + f.id); if (v) v.textContent = f.value;
+    });
+    return;
+  }
+  cfgKey = key; box.innerHTML = "";
+  let sec = null;
+  m.fields.forEach(f => {
+    if (f.sec !== sec) { sec = f.sec; const h = document.createElement("h4"); h.textContent = sec; h.style.margin = "14px 0 2px"; h.className = "muted"; box.appendChild(h); }
+    const l = document.createElement("label"); l.className = "f";
+    const sp = document.createElement("span"); sp.textContent = f.label; l.appendChild(sp);
+    let el;
+    if (f.type === "select") { el = document.createElement("select"); f.options.forEach(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; el.appendChild(o); }); el.value = f.value; }
+    else if (f.type === "check") { el = document.createElement("input"); el.type = "checkbox"; el.checked = f.value; }
+    else {
+      el = document.createElement("input"); el.type = f.type === "range" ? "range" : "number";
+      if (f.min !== "") el.min = f.min; if (f.max !== "") el.max = f.max; if (f.step) el.step = f.step; el.value = f.value;
+      if (f.type === "range") { const v = document.createElement("small"); v.id = "rv_" + f.id; v.textContent = f.value; v.style.minWidth = "28px"; sp.appendChild(document.createTextNode(" ")); sp.appendChild(v); el.oninput = () => { v.textContent = el.value; }; }
+    }
+    el.id = "rc_" + f.id;
+    el.onchange = () => {
+      const value = f.type === "check" ? el.checked : el.value;
+      Link.send({ t: "set", id: f.id, value });
+      log(`👑 ${f.label} → ${f.type === "check" ? (value ? "oui" : "non") : f.type === "select" ? el.selectedOptions[0].text : value}`);
+    };
+    l.appendChild(el); box.appendChild(l);
+  });
+  if (!m.fields.length) box.innerHTML = '<p class="muted">Aucun réglage modifiable dans cet écran.</p>';
+}
+$("cfgReload").onclick = () => Link.send({ t: "getcfg" });
+$("cfgSave").onclick = () => { Link.send({ t: "savecfg" }); log("💾 Sauvegarde demandée."); };
+$("secCfg").addEventListener("toggle", () => { if ($("secCfg").open) Link.send({ t: "getcfg" }); });
+
+/* ---------------- Progression du Sub ---------------- */
+const RANKS = ["Débutant·e", "Curieux·se", "Initié·e", "Appliqué·e", "Endurant·e", "Confirmé·e", "Aguerri·e", "Expert·e", "Virtuose", "Légende"];
+const GAPPS = Object.fromEntries(CAREER_MODES.map(k => [k, modeLabel(k)]));
+function renderGame(){
+  const L = live(), g = L && peer.game;
+  $("secGameR").classList.toggle("hidden", !g);
+  $("gDockR").classList.toggle("hidden", !(g && g.run));
+  if (!g) return;
+  const AP = Object.keys(GAPPS).filter(a => g[a]);
+  $("gSumR").textContent = AP.map(a => "Niv. " + g[a].lvl).join(" · ");
+  $("gEditR").classList.toggle("hidden", !(peer.ms && peer.ms.active));
+  const key = JSON.stringify(AP.map(a => g[a]));
+  if ($("gListR").dataset.k !== key) {
+    $("gListR").dataset.k = key; $("gListR").innerHTML = "";
+    for (const a of AP) {
+      const x = g[a], row = document.createElement("div"); row.className = "stat"; row.style.gridTemplateColumns = "1fr auto";
+      row.innerHTML = `<span><b></b><br><small class="muted"></small></span><span class="lvlTag"></span>`;
+      row.querySelector("b").textContent = GAPPS[a];
+      row.querySelector("small").textContent = `${RANKS[Math.min(9, Math.floor((x.lvl - 1) / 2))]} · ${x.wins} victoire(s) / ${x.tries} essai(s) · ${x.xp} XP`;
+      row.querySelector(".lvlTag").textContent = "Niv. " + x.lvl + (x.lvl >= 20 ? " 👑" : "");
+      $("gListR").appendChild(row);
+    }
+  }
+  const r = g.run;
+  const txt = !r ? "" : r.won ? "réussi ✅" : r.reached ? "objectif atteint ✅ (validé en fin de série)" : (r.goals || [{ v: r.prog, goal: r.goal, u: r.unit }]).map(x => `${x.v}/${x.goal} ${x.u}`).join(" · ");
+  if (r) $("gDockR").innerHTML = `🏆 Défi niv. ${r.lvl} (${modeName(r.app)}) : <b>${txt}</b>` + (r.extra && !r.won ? ` <small>(+${r.extra} s)</small>` : "")
+      + ((r.app === "motion" || r.app === "making") && !r.won ? " · " + "❤️".repeat(Math.max(0, r.lives - r.lost)) + "🖤".repeat(Math.min(r.lives, r.lost)) : "");
+  $("gRunR").innerHTML = !r || r.won ? "" : (r.goals || []).map(x => `<div class="stat"><span>${x.l}</span><div class="meter"><div class="warnC" style="width:${Math.min(100, x.v / Math.max(1, x.goal) * 100)}%"></div></div><span>${x.v}/${x.goal}</span></div>`).join("");
+}
+/* Le Maître modifie les objectifs (bornes niveau 1 / niveau 20) et le niveau du Sub */
+let gcfg = null;
+function fillApps(){
+  const sel = $("gAppR"); if (sel.options.length) return;
+  Object.entries(GAPPS).forEach(([k, v]) => { const o = document.createElement("option"); o.value = k; o.textContent = v; sel.appendChild(o); });
+  if (GAPPS[peer && peer.mode]) sel.value = peer.mode;
+}
+const askG = () => Link.send({ t: "getgcfg", app: $("gAppR").value });
+$("gEditR").addEventListener("toggle", () => { if ($("gEditR").open) { fillApps(); askG(); } });
+$("gAppR").onchange = () => { $("gRowsR").innerHTML = '<p class="muted">Chargement…</p>'; askG(); };
+$("gLvlR").onchange = () => { Link.send({ t: "gset", app: $("gAppR").value, k: "_lvl", v: +$("gLvlR").value }); log(`👑 Niveau de ${GAPPS[$("gAppR").value]} → ${$("gLvlR").value}`); };
+$("gResetR").onclick = async () => {
+  if (!await confirmDialog({ title: "Valeurs d'origine ?", html: `<p>Les objectifs personnalisés de <b>${GAPPS[$("gAppR").value]}</b> seront effacés.</p>`, ok: "Rétablir" })) return;
+  Link.send({ t: "gset", app: $("gAppR").value, k: "_reset" });
+};
+function renderGcfg(m){
+  if (m.app !== $("gAppR").value) return;
+  gcfg = m; $("gLvlR").value = m.lvl;
+  const box = $("gRowsR"); box.innerHTML = "";
+  m.rows.forEach(r => {
+    const row = document.createElement("div"); row.className = "gEditR";
+    row.innerHTML = `<span>${r.goal ? "🎯 " : ""}${r.l}${r.u ? ` <small class="muted">(${r.u})</small>` : ""}</span>`;
+    ["a", "b"].forEach(w => {
+      const i = document.createElement("input"); i.type = "number"; i.min = r.min; i.max = r.max; i.step = r.st; i.value = r[w];
+      if (r[w] !== r["d" + w]) i.style.color = "#ffd166";
+      i.onchange = () => { Link.send({ t: "gset", app: m.app, k: r.k, [w]: +i.value }); log(`👑 ${r.l} niveau ${w === "a" ? 1 : 20} → ${i.value} ${r.u}`); };
+      row.appendChild(i);
+    });
+    box.appendChild(row);
+  });
+}
+setInterval(renderGame, 500);
+
+/* ---------------- Cardio en direct ---------------- */
+const hrHist = []; let hrSeen = false, hrLostAt = 0, hrAlerted = false;
+function hrUpdate(m){
+  const t = Date.now();
+  if (m.hr != null) {
+    hrHist.push({ t, v: m.hr }); hrSeen = true; hrLostAt = 0;
+    if (hrAlerted) { alertUser("❤️ Cardio de nouveau reçu", m.hr + " bpm", "var(--ok)"); hrAlerted = false; }
+  } else if (hrSeen && !hrLostAt) hrLostAt = t;
+  while (hrHist.length && t - hrHist[0].t > 120000) hrHist.shift();
+}
+function hrDraw(){
+  const L = live(), p = peer || {}, now = Date.now();
+  if (hrSeen && hrLostAt && !hrAlerted && now - hrLostAt > 8000 && L) { hrAlerted = true; alertUser("❤️ Ceinture cardio perdue", "plus de mesure depuis 8 s", "var(--stim)"); }
+  $("hrRow").classList.toggle("hidden", !hrSeen);
+  $("hrVal").textContent = L && p.hr != null ? p.hr : "—";
+  const c = $("hrSpark"), x = c.getContext("2d"), W = c.width, H = c.height; x.clearRect(0, 0, W, H);
+  if (hrHist.length < 2) return;
+  const vs = hrHist.map(h => h.v), lo = Math.min(...vs) - 5, hi = Math.max(...vs) + 5;
+  x.strokeStyle = "#f72585"; x.lineWidth = 2; x.beginPath();
+  hrHist.forEach((h, i) => { const X = W - (now - h.t) / 120000 * W, Y = H - (h.v - lo) / (hi - lo) * H; i ? x.lineTo(X, Y) : x.moveTo(X, Y); });
+  x.stroke();
+}
+setInterval(hrDraw, 500);
+
+/* ---------------- Affichage ---------------- */
+setInterval(() => {
+  const L = live(), p = peer || {}, perm = (L && p.perm) || {};
+  $("modeName").textContent = !Link.mq ? "—" : L ? (MODE_ICONS[p.mode] || "") + " " + (modeName(p.mode) || p.mode) : "Porteur hors ligne";
+  const b = $("armBadge");
+  b.className = "badge" + (L && p.armed ? " armed" : L && p.arming ? " arming" : "");
+  b.textContent = !L ? "—" : p.arming ? "armement…" : p.armed ? "ARMÉ" : "en pause";
+  $("phase").textContent = L ? (p.phase || "") : Date.now() < navUntil ? "Changement d'écran chez le porteur…" : "En attente de son téléphone (menu → Je porte)…";
+  // métrique principale du mode
+  $("mainRow").classList.toggle("hidden", !(L && p.main));
+  if (L && p.main) {
+    $("mainLbl").textContent = p.main.label; $("mainVal").textContent = Math.round(p.main.v) + (p.main.unit || "");
+    $("mainBar").style.width = clamp(p.main.v / (p.main.max || 100) * 100, 0, 100) + "%";
+  }
+  const ty = L ? p.toys : null;
+  $("toyChip").textContent = !L ? "Jouet —" : !ty ? "Jouet : (au menu)" : !ty.on ? "⚠️ Intiface déconnecté" : ty.n ? "🔌 " + ty.names.join(", ") : "⚠️ Aucun jouet";
+  $("vibBar").style.width = (L ? p.vib : 0) + "%"; $("vibVal").textContent = L ? p.vib : "—";
+  $("vibCapMark").style.left = (L ? p.vibCap : 0) + "%"; $("vibCapTxt").textContent = L ? p.vibCap + " %" : "—";
+  $("stimRow").classList.toggle("hidden", !(L && (perm.stim || p.stim > 0)));
+  $("stimBar").style.width = (L ? p.stim : 0) + "%"; $("stimVal").textContent = L ? p.stim : "—";
+  const ch = $("chips"); ch.innerHTML = "";
+  if (L) {
+    (p.chips || []).forEach(([k, v]) => { const s = document.createElement("span"); s.innerHTML = k + " <b></b>"; s.querySelector("b").textContent = v; ch.appendChild(s); });
+    if (p.remote) { const s = document.createElement("span"); s.textContent = "🎮 tu as la main"; ch.appendChild(s); }
+  }
+  // permissions → ce qui est utilisable
+  $("armBtn").classList.toggle("off", !(L && perm.full && !p.armed && !p.arming && p.mode !== "menu"));
+  $("disarmBtn").classList.toggle("off", !(L && (p.armed || p.arming)));
+  $("modesBox").classList.toggle("hidden", !(L && perm.full));
+  $("permInfo").textContent = !L ? "" : perm.full ? "Contrôle total autorisé." : perm.vib ? "Autorisé : voir et vibrations manuelles. Armer et changer d'app sont réservés au porteur." : "Autorisé : seulement voir.";
+  if (L && perm.full) { renderModes(); renderActions(); } else $("secActions").classList.add("hidden");
+  const vibOk = L && perm.vib && p.armed;
+  $("vibCtl").classList.toggle("off", !vibOk); $("hold").classList.toggle("off", !vibOk);
+  $("secVib").classList.toggle("hidden", !(L && perm.vib));
+  $("hold").classList.toggle("hidden", !(L && perm.vib));
+  const stimOk = L && perm.stim;
+  $("secShock").classList.toggle("hidden", !stimOk); $("shockNav").classList.toggle("hidden", !stimOk);
+  const M = msOn();
+  renderMs();
+  const cfgOk = M && p.mode && p.mode !== "menu";
+  $("secCfg").classList.toggle("hidden", !cfgOk);
+  if (cfgOk && $("secCfg").open && cfgMode !== p.mode) { cfgMode = p.mode; cfgKey = ""; $("cfgBox").innerHTML = '<p class="muted">Chargement…</p>'; Link.send({ t: "getcfg" }); }
+  document.querySelector("header h1").textContent = M ? "👑 Télécommande" : "Télécommande";
+  document.querySelectorAll(".msOnly").forEach(o => { o.hidden = !M; o.disabled = !M; });
+  if (!M && +$("shockMs").value > 1000) $("shockMs").value = "400";
+  $("shockHelp").innerHTML = M ? "👑 % de la puissance maximale (le « max % » de l'appareil reste appliqué). 1 s minimum entre deux, 3 s max."
+    : `% du plafond Shock fixé par le porteur (<b>${L ? p.stimCap + " %" : "—"}</b>). 2 s minimum entre deux.`;
+  $("vibCapTxt").textContent = M ? "pleine puissance 👑" : L ? p.vibCap + " %" : "—";
+  const cool = Date.now() - lastShock < (M ? 1000 : 2000) || !(stimOk && p.armed);
+  $("shockBtn").classList.toggle("cool", cool); $("shockNav").classList.toggle("cool", cool);
+}, 250);
+
+persistDetails("remote");
+log("Connexion au téléphone du porteur…");
+</script>
+<script src="deckcards.js"></script>
+<script src="remote-apps.js"></script>
+</body>
+</html>

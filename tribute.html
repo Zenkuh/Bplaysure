@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Tribute</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  #bank{font-size:44px;font-weight:900;text-align:center;line-height:1.1}
+  #bank small{display:block;font-size:13px;font-weight:600;color:var(--mute)}
+  #holdBtn{position:relative;display:block;width:min(100%,320px);margin:0 auto;height:22vh;min-height:130px;max-height:200px;border-radius:22px;border:2px solid #7a2a2a;background:radial-gradient(circle at 50% 45%,#3a1414,#140808);color:#fff;font-size:22px;font-weight:800;touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden}
+  #holdBtn.on{border-color:#ff6b6b;box-shadow:0 0 30px #ff6b6b55 inset}
+  #holdBtn.ok{border-color:#52d273;background:radial-gradient(circle at 50% 45%,#143a1e,#08140b)}
+  #holdFill{position:absolute;left:0;bottom:0;width:100%;height:0;background:#ff6b6b33;pointer-events:none}
+  #holdTxt{position:relative;pointer-events:none;padding:0 16px}
+  #holdTxt small{display:block;font-size:14px;font-weight:600;opacity:.8;margin-top:6px}
+  .shop{display:flex;flex-direction:column;gap:6px}
+  .shop button{display:flex;justify-content:space-between;align-items:center;text-align:left}
+  .shopRow{display:grid;grid-template-columns:1fr 56px 92px 52px 52px 30px;gap:4px;align-items:center;margin:3px 0}
+  .shopRow input,.shopRow select{padding:4px;font-size:12px;width:100%}
+  .shopHead{font-size:11px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Tribute</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div id="bank">0<small>crédits de plaisir</small></div>
+    <div class="banner" id="banner" style="font-size:15px">« Armer », puis garde le doigt sur le bouton pour payer ton tribut</div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="chips"><span>Tributs payés <b id="okN">0</b></span><span>Abandons <b id="koN">0</b><span id="koMax"></span></span><span>Dépensés <b id="spentN">0</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secPlay" open>
+    <summary>🪙 Tribut</summary>
+    <div class="body">
+      <button id="holdBtn"><div id="holdFill"></div><div id="holdTxt">Demander un tribut<small>garde le doigt appuyé jusqu'au bout</small></div></button>
+      <p class="muted" id="seqInfo"></p>
+      <div id="selfShop" class="hidden">
+        <p class="muted" style="margin-top:12px"><b>Sans Maître connecté</b>, tu dépenses toi-même tes crédits :</p>
+        <div class="shop" id="shopSelf"></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secGame"></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secSeq" data-need="stim">
+    <summary>⚡ Séquence d'endurance</summary>
+    <div class="body">
+      <label class="f"><span>Durée à tenir (s)</span><input id="tribS" type="number" min="3" max="300" value="10"></label>
+      <label class="f"><span>Intensité de départ (%)</span><input id="stimStart" type="number" min="0" max="100" value="8"></label>
+      <label class="f"><span>Intensité finale (%)</span><input id="stimEnd" type="number" min="0" max="100" value="25"></label>
+      <label class="f"><span>Intervalle entre impulsions au début (ms)</span><input id="gapStart" type="number" min="300" max="10000" step="100" value="1500"></label>
+      <label class="f"><span>Intervalle à la fin (ms)</span><input id="gapEnd" type="number" min="300" max="10000" step="100" value="700"></label>
+      <label class="f"><span>Durée d'une impulsion (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="350"></label>
+      <p class="muted">Lever le doigt arrête tout <b>immédiatement</b> : la séquence est perdue, pas de crédit.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secBank">
+    <summary>🏦 Crédits & boutique</summary>
+    <div class="body">
+      <label class="f"><span>Crédits par tribut complet</span><input id="reward" type="number" min="1" max="1000" value="10"></label>
+      <label class="f"><span>Garder les crédits d'une séance à l'autre</span><input id="keepBank" type="checkbox" checked></label>
+      <label class="f"><span>Je dépense moi-même quand aucun Maître n'est connecté</span><input id="selfSpend" type="checkbox" checked></label>
+      <p class="muted">Récompenses que le Maître peut acheter (télécommande › actions) :</p>
+      <div class="shopRow shopHead"><span>Nom</span><span>Prix</span><span>Type</span><span>Int. %</span><span>Durée s</span><span></span></div>
+      <div id="shopEdit"></div>
+      <div class="row"><button id="addItem">+ Récompense</button><button id="resetBank">Remettre la banque à 0</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="60"></label>
+      <label class="f"><span>Sons</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script>
+"use strict";
+/* ======================================================================
+ * Tribute : endurer une séquence de shocks (doigt appuyé) rapporte des
+ * crédits de plaisir ; le Maître les dépense en vibrations quand il veut.
+ * ====================================================================== */
+const DEFAULT_SHOP = [
+  { n: "Vague douce", c: 10, t: "wave", i: 45, d: 15 },
+  { n: "Rafale", c: 15, t: "burst", i: 100, d: 3 },
+  { n: "Tease", c: 20, t: "tease", i: 65, d: 30 },
+  { n: "Battements", c: 25, t: "heart", i: 70, d: 30 },
+  { n: "Grande vague", c: 40, t: "wave", i: 85, d: 60 },
+];
+let shop = store.get("tributeShop", DEFAULT_SHOP);
+let bank = store.get("tributeBank", 0), spent = 0;
+const S = { seq: null, ok: 0, ko: 0, fx: null, fxT0: 0, curStim: 0, curVib: 0, pulseT: null, nextT: null };
+let armedAt = 0;
+
+const P_ = () => Game.run ? Game.run.p : null;
+const tribS = () => P_() ? P_().tribS : num("tribS");
+const stimEndV = () => P_() ? Math.round(num("maxStim") * P_().stimEnd / 100) : num("stimEnd");
+const gapEndV = () => P_() ? P_().gapEnd : num("gapEnd");
+function setBank(v, why){
+  bank = Math.max(0, Math.round(v)); store.set("tributeBank", bank);
+  if (why) log(why + ` → ${bank} crédit${bank > 1 ? "s" : ""}.`);
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+
+/* ---------------- Séquence d'endurance ---------------- */
+function startSeq(){
+  if (!App.armed) { toast("Tribute", "arme d'abord la séance", "var(--warn)"); return false; }
+  if (S.seq || S.fx) return false;
+  if (!Equip.stim) log("ℹ️ Pas d'e-stim cochée : la séquence se joue sans shock.");
+  S.seq = { t0: Date.now(), dur: tribS() * 1000, n: 0 };
+  $("holdBtn").classList.add("on"); beep(660, 90); Speak.say("Tiens bon", "hold", 1500);
+  schedulePulse(); Partner.send(true);
+  return true;
+}
+function schedulePulse(){
+  const q = S.seq; if (!q) return;
+  const p = clamp((Date.now() - q.t0) / q.dur, 0, 1);
+  const gap = num("gapStart") + (gapEndV() - num("gapStart")) * p;
+  S.nextT = Sched.after(Math.max(250, gap), () => {
+    if (!S.seq) return;
+    const pr = clamp((Date.now() - q.t0) / q.dur, 0, 1);
+    if (pr >= 1) return;
+    const lvl = num("stimStart") + (stimEndV() - num("stimStart")) * pr;
+    if (Equip.stim && lvl > 0) {
+      S.curStim = sendLevel("stim", lvl, true); q.n++;
+      Sched.cancel(S.pulseT); S.pulseT = Sched.after(clamp(num("pulseMs"), 100, 2000), () => { S.curStim = sendLevel("stim", 0, true); });
+    }
+    schedulePulse();
+  });
+}
+function stopSeq(){
+  Sched.cancel(S.nextT); Sched.cancel(S.pulseT); S.nextT = S.pulseT = null;
+  if (S.curStim) S.curStim = sendLevel("stim", 0, true);
+  S.seq = null; $("holdBtn").classList.remove("on");
+}
+function completeSeq(){
+  const n = S.seq ? S.seq.n : 0; stopSeq(); S.ok++;
+  const r = Math.round(num("reward"));
+  setBank(bank + r, `🪙 Tribut payé (${n} impulsion${n > 1 ? "s" : ""}) : +${r}`);
+  $("holdBtn").classList.add("ok"); setTimeout(() => $("holdBtn").classList.remove("ok"), 1200);
+  beep(1320, 120, 3); Speak.say(`Tribut accepté. ${bank} crédits`);
+  if (Game.run) { Game.xp(r); Game.progress(S.ok); }
+}
+function abandonSeq(){
+  if (!S.seq) return;
+  const pct = Math.round((Date.now() - S.seq.t0) / S.seq.dur * 100); stopSeq(); S.ko++;
+  log(`✋ Tribut abandonné à ${pct} % : aucun crédit.`); beep(260, 300); Speak.say("Abandonné");
+  if (Game.run) Game.loseLife();
+  Partner.send(true);
+}
+(() => {
+  const b = $("holdBtn"); let pid = null;
+  b.addEventListener("pointerdown", e => { e.preventDefault(); if (pid != null) return; if (startSeq()) { pid = e.pointerId; try { b.setPointerCapture(pid); } catch {} } });
+  const up = e => { if (e.pointerId !== pid) return; pid = null; if (S.seq) abandonSeq(); };
+  b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up); b.addEventListener("lostpointercapture", up);
+  b.addEventListener("contextmenu", e => e.preventDefault());
+})();
+
+/* ---------------- Boutique : dépenser les crédits ---------------- */
+function buy(i, who){
+  const it = shop[i]; if (!it) return;
+  if (!App.armed) return log("La séance n'est pas armée.");
+  if (S.seq) return log("Attends la fin du tribut en cours.");
+  if (bank < it.c) { log(`Pas assez de crédits pour « ${it.n} » (${it.c}).`); return; }
+  setBank(bank - it.c, `💝 ${who} dépense ${it.c} crédits : ${it.n} (${VIB_TYPES[it.t] || it.t} ${it.i} %, ${it.d} s)`);
+  spent += it.c;
+  S.fx = { type: it.t, I: it.i, D: it.d, seed: Math.random() * 100 }; S.fxT0 = Date.now();
+  beep(990, 100, 2); Speak.say(it.n);
+}
+function renderShopSelf(){
+  const box = $("shopSelf"); box.innerHTML = "";
+  shop.forEach((it, i) => { const b = document.createElement("button"); b.innerHTML = `<span>${it.n} · ${VIB_TYPES[it.t] || it.t} ${it.i} % · ${it.d} s</span><b>${it.c} 🪙</b>`; b.disabled = bank < it.c || !App.armed; b.onclick = () => buy(i, "Tu"); box.appendChild(b); });
+}
+function renderShopEdit(){
+  const box = $("shopEdit"); box.innerHTML = "";
+  shop.forEach((it, i) => {
+    const r = document.createElement("div"); r.className = "shopRow";
+    r.innerHTML = `<input value="${it.n.replace(/"/g, "&quot;")}"><input type="number" min="0" value="${it.c}"><select>${Object.entries(VIB_TYPES).map(([k, v]) => `<option value="${k}" ${k === it.t ? "selected" : ""}>${v}</option>`).join("")}</select><input type="number" min="0" max="100" value="${it.i}"><input type="number" min="1" max="600" value="${it.d}"><button>✕</button>`;
+    const [n, c, iI, d] = r.querySelectorAll("input"), t = r.querySelector("select");
+    const save = () => { shop[i] = { n: n.value.trim() || "Récompense", c: Math.max(0, +c.value || 0), t: t.value, i: clamp(+iI.value || 0, 0, 100), d: clamp(+d.value || 1, 1, 600) }; store.set("tributeShop", shop); Partner.send(true); };
+    [n, c, iI, d, t].forEach(x => x.onchange = save);
+    r.querySelector("button").onclick = () => { shop.splice(i, 1); store.set("tributeShop", shop); renderShopEdit(); };
+    box.appendChild(r);
+  });
+}
+$("addItem").onclick = () => { shop.push({ n: "Récompense", c: 10, t: "wave", i: 50, d: 20 }); store.set("tributeShop", shop); renderShopEdit(); };
+$("resetBank").onclick = async () => { if (await confirmDialog({ title: "Banque à zéro ?", html: `<p>${bank} crédits seront perdus.</p>`, ok: "Remettre à 0" })) setBank(0, "🏦 Banque remise à zéro"); };
+
+/* ---------------- Séance ---------------- */
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) {
+    armedAt = Date.now(); S.ok = 0; S.ko = 0; spent = 0;
+    if (!$("keepBank").checked) setBank(0);
+    log("Séance armée."); Game.start();
+  } else {
+    stopSeq(); S.fx = null; S.curVib = sendLevel("vib", 0, true); sendLevel("stim", 0, true);
+    Game.end();
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT"); }
+
+function tick(){
+  const t = Date.now();
+  if (S.seq && t - S.seq.t0 >= S.seq.dur) completeSeq();
+  let vib = 0;
+  if (S.fx) { const ms = t - S.fxT0; vib = VibFx.level(S.fx, ms); if (ms >= S.fx.D * 1000) S.fx = null; }
+  if (App.armed) {
+    S.curVib = sendLevel("vib", vib, !!S.fx);
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+  draw();
+}
+let lastSelfKey = "";
+function draw(){
+  $("bank").innerHTML = `${bank}<small>crédit${bank > 1 ? "s" : ""} de plaisir</small>`;
+  const q = S.seq, p = q ? clamp((Date.now() - q.t0) / q.dur, 0, 1) : 0;
+  $("holdFill").style.height = p * 100 + "%";
+  $("holdTxt").innerHTML = q ? `Tiens bon… ${Math.ceil((q.dur - (Date.now() - q.t0)) / 1000)} s<small>ne lève pas le doigt</small>` : !App.armed ? "Arme la séance<small>puis garde le doigt appuyé ici</small>" : `Demander un tribut<small>+${num("reward")} crédits si tu tiens ${tribS()} s</small>`;
+  $("banner").textContent = q ? "⚡ Tribut en cours : ne lâche pas !" : S.fx ? `💝 ${shop.find(x => x.t === S.fx.type)?.n || "Récompense"} en cours…` : App.armed ? "Garde le doigt sur le bouton pour payer ton tribut" : "« Armer » pour commencer";
+  $("stimBar").style.width = S.curStim + "%"; $("stimVal").textContent = Math.round(S.curStim);
+  $("vibBar").style.width = S.curVib + "%"; $("vibVal").textContent = Math.round(S.curVib);
+  $("okN").textContent = S.ok; $("koN").textContent = S.ko; $("spentN").textContent = spent;
+  $("koMax").textContent = Game.run ? " / " + (Game.run.p.lives + 1) : "";
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0; $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  $("seqInfo").textContent = `${tribS()} s · shocks de ${num("stimStart")} à ${stimEndV()} %, une impulsion toutes les ${(num("gapStart") / 1000).toFixed(1)} → ${(gapEndV() / 1000).toFixed(1)} s.`;
+  const self = $("selfSpend").checked && !(typeof Link !== "undefined" && Link.peerLive);
+  $("selfShop").classList.toggle("hidden", !self);
+  const key = self + "|" + bank + "|" + App.armed + "|" + JSON.stringify(shop);
+  if (self && key !== lastSelfKey) { lastSelfKey = key; renderShopSelf(); }
+}
+
+/* ---------------- Initialisation ---------------- */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Tribute", roleLabels: { vib: "Vibration (récompenses)", stim: "Shock (tributs)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", 0, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); S.curStim = sendLevel("stim", num("stimStart"), true); setTimeout(() => { S.curStim = sendLevel("stim", 0, true); }, num("pulseMs")); };
+const KEY = "tributeCfg";
+const FIELDS = ["tribS","stimStart","stimEnd","gapStart","gapEnd","pulseMs","reward","maxVib","maxStim","sessionMax"];
+const CHECKS = ["keepBank","selfSpend","sound","voice"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+applyEquip(); renderShopEdit();
+Game.init("tribute", {
+  apply: (p, on) => {
+    ["tribS", "stimEnd", "gapEnd"].forEach(id => { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; });
+    if (on) { $("tribS").value = p.tribS; $("stimEnd").value = Math.round(num("maxStim") * p.stimEnd / 100); $("gapEnd").value = p.gapEnd; }
+  },
+});
+Partner.init("tribute", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Crédits", v: bank, max: Math.max(100, bank), unit: " 🪙" },
+    phase: $("banner").textContent,
+    chips: [["Crédits", bank], ["Tributs", S.ok], ["Abandons", S.ko], ["Dépensés", spent], ...(S.seq ? [["En cours", Math.round((Date.now() - S.seq.t0) / S.seq.dur * 100) + " %"]] : [])],
+  }),
+  actions: () => !App.armed ? [] : [
+    ...shop.map((it, i) => ({ id: "buy:" + i, label: `💝 ${it.n} · ${it.c} 🪙${bank < it.c ? " (pas assez)" : ""}` })),
+    { id: "demand", label: "🪙 Exiger un tribut" },
+    { id: "gift10", label: "🎁 Offrir 10 crédits" },
+    { id: "take10", label: "✂️ Confisquer 10 crédits" },
+  ],
+  doAction: id => {
+    if (!App.armed) return;
+    if (id.startsWith("buy:")) buy(+id.slice(4), "Le Maître");
+    else if (id === "demand") { log("🎮 Le Maître exige un tribut."); Speak.say("Ton Maître exige un tribut"); toast("🪙 Tribut exigé", "pose ton doigt sur le bouton", "#ffd166"); beep(880, 150, 3); }
+    else if (id === "gift10") setBank(bank + 10, "🎁 Le Maître offre 10 crédits");
+    else if (id === "take10") setBank(bank - 10, "✂️ Le Maître confisque 10 crédits");
+  },
+});
+setInterval(tick, 100);
+log("Prêt. « Armer », puis garde le doigt sur le grand bouton pendant toute la séquence pour gagner des crédits.");
+</script>
+</body>
+</html>

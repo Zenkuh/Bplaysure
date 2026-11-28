@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Mind Games</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .seg{display:flex;gap:6px;margin:4px 0 10px}
+  .seg button{flex:1}
+  .seg button.sel{background:var(--acc);color:#000;border-color:var(--acc)}
+  #screen{font:800 34px ui-monospace,monospace;letter-spacing:10px;text-align:center;min-height:1.3em;margin:6px 0}
+  #hint{text-align:center;color:var(--mute);min-height:1.3em}
+  .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:360px;margin:10px auto}
+  .keys button{height:64px;font-size:26px;font-weight:800;border-radius:14px;background:#15151d;border:1px solid #2b2b38;color:#ddd}
+  .keys button:active{background:#2a2a3a}
+  .keys.dark button{background:#08080b;color:#3a3a46;border-color:#15151c}
+  .keys.locked button{opacity:.25}
+  .keys button.hit{background:var(--acc,#c77dff)!important;color:#000!important;transform:scale(.95)}
+  .keys button.hitOk{background:#52d273!important;color:#000!important;transform:scale(.95)}
+  .keys button.hitKo{background:#ff4d6d!important;color:#000!important;transform:scale(.95)}
+  .keys button{transition:background .12s,transform .08s}
+  .keys button.fn{font-size:22px;color:#aaa}
+  .keys button.fn.ok{color:#52d273}
+  /* Master Mind */
+  .slots{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:6px 0}
+  .slots b{width:34px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:10px;background:#15151d;border:2px solid #2b2b38;font:800 26px ui-monospace,monospace}
+  .slots b.cur{border-color:var(--acc,#c77dff)}
+  .slots b.ghost{color:#ffffff38}
+  .slots b.g{background:#1f6b3a;border-color:#52d273}
+  .slots b.o{background:#7a4a10;border-color:#ffa53a}
+  .slots b.r{background:#6b1626;border-color:#ff4d6d}
+  #mmHist{max-height:220px;overflow:auto;margin:4px auto;max-width:420px}
+  #mmHist .slots{margin:3px 0}
+  #mmHist .slots b{width:26px;height:32px;font-size:18px;border-width:1px}
+  #mmHist .slots i{font:600 12px system-ui;color:var(--mute);align-self:center;margin-left:6px;font-style:normal}
+  .pads{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:380px;margin:10px auto}
+  .pads button{height:130px;border-radius:20px;border:0;opacity:.45;transition:opacity .08s,transform .08s}
+  .pads button.lit{opacity:1;transform:scale(1.03);box-shadow:0 0 30px currentColor}
+  .tier{display:flex;gap:4px;justify-content:center;margin:6px 0}
+  .tier i{width:18px;height:8px;border-radius:4px;background:#2b2b38}
+  .tier i.on{background:var(--vib,#c77dff)}
+  .tier i.ok{background:#52d273}
+  .tier i.ko{background:#ff4d6d}
+  .tier i.cur{outline:2px solid #fff6}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Mind Games</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="banner" style="font-size:16px">🧠 Choisis une épreuve, puis « Armer »</div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips"><span>Réussies <b id="okN">0</b></span><span>Erreurs <b id="koN">0</b><span id="koMax"></span></span><span>Tentative <b id="roundN">—</b></span><span>D'affilée <b id="tierN">0</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secPlay" open>
+    <summary>🧠 Épreuve <small id="gameSum"></small></summary>
+    <div class="body">
+      <div class="seg" id="gameSeg"><button data-g="code">🎯 Master Mind</button><button data-g="simon">🎵 Simon</button><button data-g="seq">🎧 Séquence</button></div>
+      <div id="screen"></div>
+      <div id="hint"></div>
+      <div id="mmHist"></div>
+      <div class="tier" id="tierBar"></div>
+      <div class="keys" id="keys"></div>
+      <div class="pads hidden" id="pads">
+        <button data-z="0" style="background:#e63946;color:#e63946"></button><button data-z="1" style="background:#2a9d8f;color:#2a9d8f"></button>
+        <button data-z="2" style="background:#457bfd;color:#457bfd"></button><button data-z="3" style="background:#ffd166;color:#ffd166"></button>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secGame"></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secRules">
+    <summary>⚙️ Réglages des épreuves</summary>
+    <div class="body">
+      <p class="pGroup muted"><b>🏁 Séance Simon / Séquence</b></p>
+      <p class="muted">Une séance = un nombre fixe de tentatives (10 au maximum). Réussite : la longueur augmente (selon le réglage ci-dessous). Erreur : un shock, <b>une chose de moins</b> à retenir, et on passe à une <b>nouvelle</b> tentative. Plus tu enchaînes les réussites, plus la vibration monte ; une erreur la fait retomber. À la fin, le score décide : grosse récompense ou grosse punition, selon l'écart au seuil.</p>
+      <label class="f"><span>Tentatives par séance</span><input id="rounds" type="number" min="3" max="10" value="10"></label>
+      <label class="f"><span>Réussites pour une chose de plus à retenir</span><input id="lenStep" type="number" min="1" max="5" value="2"></label>
+      <label class="f"><span>Seuil de réussite (% de tentatives réussies)</span><input id="passPct" type="number" min="10" max="100" step="5" value="60"></label>
+      <label class="f" data-need="vib"><span>Récompense max : vibration (%)</span><input id="rewTop" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="vib"><span>Récompense max : durée (s)</span><input id="rewS" type="number" min="5" max="600" value="60"></label>
+      <label class="f" data-need="stim"><span>Punition max : nombre de shocks</span><input id="punN" type="number" min="1" max="30" value="8"></label>
+      <label class="f" data-need="stim"><span>Punition max : intensité (%)</span><input id="punLvl" type="number" min="0" max="100" value="35"></label>
+      <p class="muted">Exemple avec 10 tentatives et un seuil de 60 % : 10/10 = récompense maximale, 6/10 = récompense minimale (40 %), 5/10 = petite punition, 0/10 = punition maximale. Les shocks restent sous le plafond, et ARRÊT coupe tout sans pénalité.</p>
+      <p class="pGroup muted"><b>🎯 Master Mind</b></p>
+      <p class="muted">Trouve le code en proposant tous ses chiffres. Après chaque proposition : <b style="color:#52d273">vert</b> = bon chiffre à la bonne place, <b style="color:#ffa53a">orange</b> = chiffre présent mais mal placé, <b style="color:#ff4d6d">rouge</b> = chiffre absent.</p>
+      <label class="f"><span>Longueur du code</span><input id="codeLen" type="number" min="2" max="10" value="4"></label>
+      <label class="f"><span>Essais par code</span><input id="mmTries" type="number" min="1" max="30" value="10"></label>
+      <label class="f"><span>Chiffres tous différents</span><input id="mmUnique" type="checkbox" checked></label>
+      <label class="f" data-need="stim"><span>🔴 Rouge : shock long (ms)</span><input id="redMs" type="number" min="100" max="2000" step="50" value="900"></label>
+      <label class="f" data-need="stim"><span>🔴 + intensité par rouge en plus (%)</span><input id="redStep" type="number" min="0" max="20" value="3"></label>
+      <label class="f" data-need="stim"><span>🟠 Orange seul : shock court (ms)</span><input id="orMs" type="number" min="50" max="1000" step="50" value="200"></label>
+      <label class="f" data-need="vib"><span>🟢 Vert : vibration (%)</span><input id="grVib" type="number" min="0" max="100" value="50"></label>
+      <label class="f" data-need="vib"><span>🟢 Durée par vert (s)</span><input id="grS" type="number" min="0" max="30" step="0.5" value="2"></label>
+      <label class="f" data-need="vib"><span>🏆 Code trouvé : vibration (%)</span><input id="winVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="vib"><span>🏆 Code trouvé : durée (s)</span><input id="winS" type="number" min="3" max="300" value="30"></label>
+      <p class="muted">Un rouge (ou plus) = shock long, plus fort à chaque rouge supplémentaire ; seulement des oranges = shock court. Essais épuisés = code perdu (une vie en carrière). Les indices du Maître s'affichent en transparent : il faut quand même les taper.</p>
+      <p class="pGroup muted"><b>🎵 Simon</b></p>
+      <label class="f"><span>Longueur de départ</span><input id="simLen" type="number" min="2" max="10" value="3"></label>
+      <label class="f"><span>Temps de réponse par touche (ms)</span><input id="reactMs" type="number" min="500" max="8000" step="100" value="2500"></label>
+      <label class="f"><span>Vibration du téléphone (zones et touches)</span><input id="haptic" type="checkbox" checked></label>
+      <label class="f"><span>Vibration de base (%)</span><input id="tierBase" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>+ par réussite d'affilée (%)</span><input id="tierStep" type="number" min="0" max="50" value="10"></label>
+      <p class="pGroup muted"><b>🎧 Séquence</b></p>
+      <label class="f"><span>Longueur de départ</span><input id="seqLen" type="number" min="2" max="10" value="5"></label>
+      <label class="f"><span>Vibration pendant la dictée (%)</span><input id="teaseLvl" type="number" min="0" max="100" value="45"></label>
+      <label class="f"><span>Vibration pendant la saisie (pic, %)</span><input id="peakLvl" type="number" min="0" max="100" value="80"></label>
+      <label class="f"><span>Shocks aléatoires pendant la saisie</span><input id="peakZaps" type="checkbox"></label>
+      <label class="f"><span>Temps pour taper la séquence (s)</span><input id="inputS" type="number" min="3" max="120" value="20"></label>
+      <p class="muted">Conseil : mets un écouteur pour entendre la dictée.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Erreurs → shock</summary>
+    <div class="body">
+      <label class="f"><span>Intensité (%)</span><input id="errLvl" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>+ par erreur de la séance (%)</span><input id="errEsc" type="number" min="0" max="20" value="2"></label>
+      <label class="f"><span>Durée (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="400"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="45"></label>
+      <label class="f"><span>Sons</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script>
+"use strict";
+/* ======================================================================
+ * Mind Games : 🎯 Master Mind · 🎵 Simon · 🎧 séquence dictée
+ * ====================================================================== */
+const MAXLEN = 10;   // jamais plus de 10 choses à retenir
+const DIG = ["zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf"];
+const ZONES = [{ f: 330, n: "rouge", h: [60] }, { f: 415, n: "vert", h: [60, 90, 60] }, { f: 494, n: "bleu", h: [220] }, { f: 554, n: "jaune", h: [60, 90, 60, 90, 60] }];
+let game = store.get("mindGame", "code");
+const M = { ok: 0, ko: 0, errs: 0, tier: 0, phase: "idle", curVib: 0, curStim: 0, timers: [], lockUntil: 0, armedAt: 0,
+  code: "", nextCode: null, rev: 0, hints: [], guess: "", hist: [], tries: 0, grUntil: 0, winUntil: 0, winT0: 0,
+  sim: [], simIn: 0, simLen: 3, nextSim: null, lastTap: 0, lit: -1,
+  seq: "", seqLen: 5, seqPos: 0, seqT0: 0, res: [], final: null };
+const P_ = () => Game.run ? Game.run.p : null;
+const clearT = () => { M.timers.forEach(t => Sched.cancel(t)); M.timers = []; };
+const after = (ms, f) => { const t = Sched.after(ms, f); M.timers.push(t); return t; };
+const rndDigits = n => Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join("");
+let mctx = null;
+function tone(f, ms){ if (!$("sound").checked) return; try { mctx = mctx || new (window.AudioContext || window.webkitAudioContext)(); const o = mctx.createOscillator(), g = mctx.createGain(); o.type = "triangle"; o.frequency.value = f; g.gain.setValueAtTime(0.2, mctx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, mctx.currentTime + ms / 1000); o.connect(g).connect(mctx.destination); o.start(); o.stop(mctx.currentTime + ms / 1000); } catch {} }
+
+function shock(why){
+  if (!Equip.stim) return;
+  M.curStim = sendLevel("stim", num("errLvl") + M.errs * num("errEsc"), true);
+  log(`⚡ ${Math.round(M.curStim)} % — ${why}`);
+  after(clamp(num("pulseMs"), 100, 2000), () => { M.curStim = sendLevel("stim", 0, true); });
+}
+function success(msg){
+  M.ok++; M.tier = Math.min(20, M.tier + 1); beep(1320, 100, 3); Speak.say(msg || "Bravo", "ok", 500); log("✅ " + (msg || "Réussi"));
+  if (Game.run) { Game.progress(M.ok); if (!Game.run) return false; }
+  Partner.send(true); return true;
+}
+/* life : un code perdu au Master Mind coûte une vie de carrière ; Simon et Séquence non (le score final décide) */
+function failure(why, life = true, zap = true){
+  M.ko++; M.errs++; M.tier = 0; beep(220, 350); log("❌ " + why);   // série d'affilée remise à zéro
+  if (zap) shock(why);
+  if (life && Game.run) { Game.loseLife(); if (!Game.run) { after(1500, () => { if (App.armed) setArmed(false); }); return false; } }
+  Partner.send(true); return true;
+}
+
+/* ---------------- 🏁 Séance en tentatives (Simon, Séquence) ---------------- */
+/* longueur après une réussite : +1 à la 1re réussite, puis +1 toutes les « lenStep » réussites
+   (avec 2 : 3 → 4 → 4 → 5 → 5 → 6…), jamais plus de 10 */
+function growLen(cur){
+  M.okLen = (M.okLen || 0) + 1;
+  const step = clamp(Math.round(num("lenStep")) || 1, 1, 5);
+  return (M.okLen - 1) % step === 0 ? Math.min(MAXLEN, cur + 1) : cur;
+}
+/* erreur : une chose de moins à retenir (au moins 2) */
+const shrinkLen = cur => Math.max(2, cur - 1);
+const roundsV = () => clamp(Math.round(num("rounds")) || 10, 1, 10);
+const isRounds = () => game === "simon" || game === "seq";
+function roundEnd(ok, delay){
+  M.res.push(ok); Partner.send(true);
+  const N = roundsV();
+  if (M.res.length >= N) after(delay, finale);
+  else { log(`🏁 Tentative ${M.res.length}/${N} terminée.`); after(delay, () => App.armed && (game === "simon" ? simStart() : seqStart())); }
+}
+function finale(){
+  if (!App.armed) return;
+  clearT(); M.lit = -1;
+  const N = M.res.length, ok = M.res.filter(Boolean).length, sc = N ? ok / N : 0, p = clamp(num("passPct"), 10, 100) / 100;
+  const pass = sc >= p - 1e-9, t = Date.now();
+  // q : 0 = juste au seuil, 1 = extrême (tout réussi / tout raté)
+  const q = pass ? (p >= 1 ? 1 : (sc - p) / (1 - p)) : (p - sc) / p;
+  M.phase = "final";
+  M.final = { ok, N, pass, q, t0: t };
+  log(`🏁 Score final : ${ok}/${N} (${Math.round(sc * 100)} %, seuil ${Math.round(p * 100)} %) → ${pass ? "récompense" : "punition"} ${Math.round((pass ? 0.4 + 0.6 * q : q) * 100)} %.`);
+  if (Game.run && !Game.run.won) { if (ok >= Math.min(Game.target("goal"), N)) Game.win(); else Game.fail(`${ok}/${N} réussies`); }
+  if (pass) {
+    const k = 0.4 + 0.6 * q, D = Math.max(5, num("rewS") * k);
+    M.final.I = num("rewTop") * k; M.final.until = t + D * 1000;
+    Speak.say(`${ok} sur ${N}. ${q >= 0.99 ? "Parfait." : "Bien."} Profite`); beep(1320, 120, 5);
+    after(D * 1000 + 300, finishSession);
+  } else {
+    const n = Math.max(1, Math.round(num("punN") * q)), lvl = num("errLvl") + (num("punLvl") - num("errLvl")) * q, dur = clamp(num("pulseMs"), 100, 2000);
+    M.final.n = n; M.final.lvl = lvl;
+    Speak.say(`${ok} sur ${N}. Pas assez. ${Equip.stim ? n + " punition" + (n > 1 ? "s" : "") : ""}`); beep(220, 600);
+    if (Equip.stim) for (let i = 0; i < n; i++) after(2500 + i * 1500, () => {
+      M.curStim = sendLevel("stim", lvl, true); log(`⚡ Punition ${i + 1}/${n} : ${Math.round(M.curStim)} %`);
+      after(dur, () => { M.curStim = sendLevel("stim", 0, true); });
+    });
+    after(2500 + n * 1500 + 800, finishSession);
+  }
+  Partner.send(true);
+}
+function finishSession(){ if (!App.armed) return; log("🏁 Séance terminée."); const f = M.final; setArmed(false); M.final = f; }
+
+/* ---------------- 🎯 Master Mind ---------------- */
+const triesV = () => P_() && P_().tries ? P_().tries : clamp(num("mmTries"), 1, 30);
+function newCode(L){
+  if ($("mmUnique").checked && L <= 10) { const d = [..."0123456789"]; for (let i = d.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [d[i], d[j]] = [d[j], d[i]]; } return d.slice(0, L).join(""); }
+  return rndDigits(L);
+}
+function codeStart(){
+  const L = P_() ? P_().len : clamp(num("codeLen"), 2, 10);
+  M.code = M.nextCode && M.nextCode.length ? M.nextCode : newCode(L); M.nextCode = null;
+  M.rev = 0; M.hints = []; M.guess = ""; M.hist = []; M.tries = 0; M.phase = "code";
+  log(`🎯 Nouveau code de ${M.code.length} chiffres, ${triesV()} essais.`); Speak.say(`Code de ${M.code.length} chiffres. ${triesV()} essais`);
+  Partner.send(true);
+}
+/* indice du Maître : un chiffre affiché en transparent (il faut quand même le taper) */
+function codeReveal(){
+  if (M.phase !== "code") return;
+  const free = [...M.code].map((_, i) => i).filter(i => !M.hints.includes(i)); if (!free.length) return;
+  const i = free[Math.floor(Math.random() * free.length)]; M.hints.push(i); M.rev = M.hints.length;
+  beep(880, 90, 2); log(`💡 Indice : position ${i + 1}.`); Speak.say(`Indice, position ${i + 1}`); Partner.send(true);
+}
+/* vert = bonne place, orange = présent ailleurs, rouge = absent (doublons comptés correctement) */
+function score(g, c){
+  const res = Array(c.length).fill("r"), left = {};
+  for (let i = 0; i < c.length; i++) { if (g[i] === c[i]) res[i] = "g"; else left[c[i]] = (left[c[i]] || 0) + 1; }
+  for (let i = 0; i < c.length; i++) if (res[i] !== "g" && left[g[i]] > 0) { res[i] = "o"; left[g[i]]--; }
+  return res;
+}
+function codeKey(d){
+  if (M.phase !== "code" || Date.now() < M.lockUntil) return false;
+  if (d === "del") { M.guess = M.guess.slice(0, -1); return true; }
+  if (d === "ok") { if (M.guess.length === M.code.length) codeSubmit(); else { beep(200, 80); return false; } return true; }
+  if (M.guess.length >= M.code.length) return false;
+  M.guess += String(d); tone(560 + M.guess.length * 40, 60); return true;
+}
+function codeSubmit(){
+  const g = M.guess, c = score(g, M.code), L = M.code.length, t = Date.now();
+  const G = c.filter(x => x === "g").length, O = c.filter(x => x === "o").length, R = c.filter(x => x === "r").length;
+  M.tries++; M.hist.unshift({ g, c }); M.guess = ""; M.lockUntil = t + 1200;
+  log(`🎯 Essai ${M.tries}/${triesV()} : ${g} → ${G}🟢 ${O}🟠 ${R}🔴`);
+  if (G === L) {
+    M.phase = "free"; M.winT0 = t; M.winUntil = t + num("winS") * 1000;
+    if (!success(`Code trouvé en ${M.tries} essai${M.tries > 1 ? "s" : ""}`)) return;
+    after(num("winS") * 1000 + 1500, () => { if (App.armed && game === "code") codeStart(); });
+    Partner.send(true); return;
+  }
+  Speak.say([G && `${G} vert${G > 1 ? "s" : ""}`, O && `${O} orange${O > 1 ? "s" : ""}`, R && `${R} rouge${R > 1 ? "s" : ""}`].filter(Boolean).join(", "));
+  // récompense partielle : vibration modérée, plus longue avec plus de verts
+  if (G > 0) M.grUntil = Math.max(M.grUntil, t) + G * num("grS") * 1000;
+  // punition : rouge = shock long (plus fort à chaque rouge), sinon orange = shock court
+  if (Equip.stim && (R > 0 || O > 0)) {
+    const lvl = num("errLvl") + M.errs * num("errEsc") + (R > 1 ? (R - 1) * num("redStep") : 0), dur = R > 0 ? num("redMs") : num("orMs");
+    after(R > 0 ? 400 : 200, () => {
+      M.curStim = sendLevel("stim", lvl, true); log(`⚡ ${Math.round(M.curStim)} % · ${dur} ms — ${R > 0 ? R + " rouge" + (R > 1 ? "s" : "") : O + " orange" + (O > 1 ? "s" : "")}`);
+      after(clamp(dur, 50, 2000), () => { M.curStim = sendLevel("stim", 0, true); });
+    });
+    M.errs++;
+  }
+  if (M.tries >= triesV()) {
+    M.phase = "lost"; Speak.say("Essais épuisés. Le code était " + M.code.split("").map(x => DIG[+x]).join(", "));
+    failure(`code non trouvé en ${M.tries} essais (c'était ${M.code})`, true, false);
+    after(6000, () => { if (App.armed && game === "code") codeStart(); });
+  }
+  Partner.send(true);
+}
+
+/* ---------------- 🎵 Simon ---------------- */
+function simStart(){
+  const L = clamp(M.simLen, 2, MAXLEN);
+  M.sim = M.nextSim && M.nextSim.length ? M.nextSim.slice(0, MAXLEN) : Array.from({ length: L }, () => Math.floor(Math.random() * 4)); M.nextSim = null;
+  M.simIn = 0; M.phase = "simShow"; Speak.say("Écoute", "simon", 1000);
+  M.sim.forEach((z, k) => after(900 + k * 750, () => flash(z, 480)));
+  after(900 + M.sim.length * 750 + 200, () => { M.phase = "simIn"; M.lastTap = Date.now(); Speak.say("À toi", "simon2", 500); });
+}
+function flash(z, ms){
+  M.lit = z; tone(ZONES[z].f, ms); if ($("haptic").checked && navigator.vibrate) try { navigator.vibrate(ZONES[z].h); } catch {}
+  after(ms, () => { M.lit = -1; });
+}
+function simTap(z){
+  if (M.phase !== "simIn") return;
+  flash(z, 200); M.lastTap = Date.now();
+  if (z === M.sim[M.simIn]) {
+    M.simIn++;
+    if (M.simIn >= M.sim.length) { M.phase = "pause"; const L0 = M.simLen; M.simLen = growLen(M.simLen); success(M.simLen > L0 ? "Bien. Une de plus" : "Bien"); roundEnd(true, 2200); }
+  } else simFail("mauvaise zone");
+}
+/* erreur : shock, même longueur, et on passe à la tentative suivante (jamais la même en boucle) */
+function simFail(why){ M.phase = "pause"; M.simLen = shrinkLen(M.simLen); Speak.say("Raté. Une de moins"); failure("Simon : " + why, false); roundEnd(false, 2500); }
+
+/* ---------------- 🎧 Séquence dictée ---------------- */
+function seqStart(){
+  M.seq = rndDigits(clamp(M.seqLen, 2, MAXLEN)); M.seqPos = 0; M.phase = "seqListen";
+  log(`🎧 Dictée de ${M.seq.length} chiffres.`);
+  Speak.say("Retiens. " + M.seq.split("").map(d => DIG[+d]).join(", "));
+  after(1600 + M.seq.length * 850 + 1500, () => {
+    M.phase = "seqIn"; M.seqT0 = Date.now(); beep(990, 120);
+    if (Equip.stim && $("peakZaps").checked) { let t = 1500; while (t < num("inputS") * 1000) { after(t, () => { if (M.phase === "seqIn") { M.curStim = sendLevel("stim", num("errLvl") * 0.7, true); after(250, () => { M.curStim = sendLevel("stim", 0, true); }); } }); t += 2000 + Math.random() * 4000; } }
+  });
+}
+function seqKey(d){
+  if (M.phase !== "seqIn") return;
+  tone(500, 50);
+  if (String(d) === M.seq[M.seqPos]) {
+    M.seqPos++;
+    if (M.seqPos >= M.seq.length) { M.phase = "pause"; const L0 = M.seqLen; M.seqLen = growLen(M.seqLen); success(M.seqLen > L0 ? "Exact. Un chiffre de plus" : "Exact"); roundEnd(true, 3000); }
+  } else { M.phase = "pause"; M.seqLen = shrinkLen(M.seqLen); Speak.say("Faux. Un chiffre de moins"); failure(`séquence : ${d} au lieu de ${M.seq[M.seqPos]}`, false); roundEnd(false, 3000); }
+}
+
+/* ---------------- Séance ---------------- */
+function startGame(){
+  clearT(); M.lit = -1;
+  const L = P_() ? P_().len : null;
+  M.simLen = L || num("simLen"); M.seqLen = L || num("seqLen");
+  M.okLen = 0;
+  if (game === "code") codeStart(); else if (game === "simon") simStart(); else seqStart();
+}
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) {
+    Object.assign(M, { ok: 0, ko: 0, errs: 0, tier: 0, lockUntil: 0, res: [], final: null }); M.armedAt = Date.now(); Game.start();
+    log("Séance armée." + (isRounds() ? ` ${roundsV()} tentatives, seuil ${num("passPct")} %.` : "")); after(1200, startGame);
+  }
+  else { clearT(); M.phase = "idle"; M.curVib = sendLevel("vib", 0, true); M.curStim = sendLevel("stim", 0, true); Game.end(); }
+  Partner.send(true);
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT"); }
+
+let lastTick = performance.now();
+function tick(){
+  const now = performance.now(), dt = Math.min(0.5, (now - lastTick) / 1000), t = Date.now(); lastTick = now;
+  let vib = 0;
+  if (App.armed && !App.suspended) {
+    const tierV = num("tierBase") + M.tier * num("tierStep");
+    if (M.phase === "final") {
+      const f = M.final; vib = f && f.pass && t < f.until ? VibFx.level({ type: "wave", I: f.I, D: 8 }, (t - f.t0) % 8000) : 0;
+    } else if (game === "code") {
+      if (M.phase === "free" && t < M.winUntil) vib = Math.max(num("winVib") * 0.7, VibFx.level({ type: "wave", I: num("winVib"), D: 6 }, (t - M.winT0) % 6000));
+      else if (t < M.grUntil) vib = Math.max(tierV, num("grVib"));
+      else vib = tierV;
+    } else if (game === "simon") {
+      vib = tierV;
+      if (M.phase === "simIn" && t - M.lastTap > (P_() ? P_().react : num("reactMs"))) simFail("trop lent");
+    } else if (game === "seq") {
+      // pendant la dictée : vibration continue (douce ondulation, jamais coupée)
+      if (M.phase === "seqListen") vib = Math.max(tierV, num("teaseLvl")) * (0.8 + 0.2 * Math.sin((t - M.armedAt) / 600));
+      else if (M.phase === "seqIn") { vib = num("peakLvl"); if (t - M.seqT0 > num("inputS") * 1000) { M.phase = "pause"; M.seqLen = shrinkLen(M.seqLen); Speak.say("Temps écoulé"); failure("séquence : temps écoulé", false); roundEnd(false, 3000); } }
+      else vib = tierV * 0.5;
+    }
+    M.curVib = sendLevel("vib", vib);
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - M.armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+  draw();
+}
+
+/* ---------------- Affichage ---------------- */
+function buildKeys(){
+  const k = $("keys"); k.innerHTML = "";
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, "del", 0, "ok"].forEach(d => {
+    const b = document.createElement("button"); b.dataset.k = d;
+    if (d === "del" || d === "ok") { b.textContent = d === "del" ? "⌫" : "✔"; b.className = "fn" + (d === "ok" ? " ok" : ""); }
+    else b.textContent = d;
+    b.addEventListener("pointerdown", e => { e.preventDefault(); key(d, b); });
+    k.appendChild(b);
+  });
+}
+/* retour visuel (couleur) + haptique à chaque touche */
+function keyFx(b, cls){
+  b.classList.remove("hit", "hitOk", "hitKo"); void b.offsetWidth; b.classList.add(cls);
+  clearTimeout(b._fx); b._fx = setTimeout(() => b.classList.remove(cls), 260);
+  if ($("haptic").checked && navigator.vibrate) try { navigator.vibrate(cls === "hitKo" ? [40, 40, 40] : 25); } catch {}
+}
+function key(d, b){
+  if (!App.armed) return;
+  if (game === "code") { if (codeKey(d) && b) keyFx(b, "hit"); }
+  else if (game === "seq" && typeof d === "number") {
+    if (M.phase !== "seqIn") return;
+    const ok = String(d) === M.seq[M.seqPos]; if (b) keyFx(b, ok ? "hitOk" : "hitKo"); seqKey(d);
+  }
+}
+document.querySelectorAll("#pads button").forEach(b => b.addEventListener("pointerdown", e => { e.preventDefault(); if (App.armed && game === "simon") simTap(+b.dataset.z); }));
+function setGame(g){
+  if (App.armed) return toast("Mind Games", "désarme pour changer d'épreuve", "var(--warn)");
+  game = g; store.set("mindGame", g);
+  document.querySelectorAll("#gameSeg button").forEach(b => b.classList.toggle("sel", b.dataset.g === g));
+  $("gameSum").textContent = { code: "Master Mind", simon: "Simon", seq: "Séquence" }[g];
+  Partner.send(true);
+}
+document.querySelectorAll("#gameSeg button").forEach(b => b.onclick = () => setGame(b.dataset.g));
+function draw(){
+  const t = Date.now(), locked = t < M.lockUntil;
+  $("keys").classList.toggle("hidden", game === "simon"); $("pads").classList.toggle("hidden", game !== "simon");
+  $("keys").classList.toggle("dark", game === "seq"); $("keys").classList.toggle("locked", locked || (game === "seq" && M.phase !== "seqIn") || (game === "code" && M.phase !== "code"));
+  document.querySelectorAll("#keys .fn").forEach(b => b.style.visibility = game === "code" ? "" : "hidden");
+  $("mmHist").classList.toggle("hidden", game !== "code");
+  document.querySelectorAll("#pads button").forEach(b => b.classList.toggle("lit", +b.dataset.z === M.lit));
+  let scr = "", hint = "";
+  if (!App.armed) { scr = ""; hint = "« Armer » pour commencer"; }
+  else if (game === "code") {
+    scr = null;
+    hint = M.phase === "free" ? `🏆 Code trouvé ! Récompense ${Math.max(0, Math.ceil((M.winUntil - t) / 1000))} s` : M.phase === "lost" ? `❌ Perdu — le code était ${M.code}` : `Essai ${Math.min(M.tries + 1, triesV())}/${triesV()} · tape ${M.code.length} chiffres puis ✔`;
+  } else if (game === "simon") {
+    scr = M.phase === "simShow" ? "👀" : M.phase === "simIn" ? "●".repeat(M.simIn) + "○".repeat(Math.max(0, M.sim.length - M.simIn)) : "";
+    hint = M.phase === "simShow" ? "Regarde et écoute…" : M.phase === "simIn" ? `À toi ! ${Math.max(0, ((P_() ? P_().react : num("reactMs")) - (t - M.lastTap)) / 1000).toFixed(1)} s` : "";
+  } else {
+    scr = M.phase === "seqIn" ? "●".repeat(M.seqPos) + "○".repeat(M.seq.length - M.seqPos) : M.phase === "seqListen" ? "🎧" : "";
+    hint = M.phase === "seqListen" ? `Écoute la dictée (${M.seq.length} chiffres)…` : M.phase === "seqIn" ? `Tape la séquence · ${Math.max(0, Math.ceil(num("inputS") - (t - M.seqT0) / 1000))} s` : "";
+  }
+  if (scr === null) {
+    // Master Mind : cases de la proposition (indices du Maître en transparent)
+    const L = M.code.length, show = M.phase === "free" || M.phase === "lost";
+    $("screen").innerHTML = `<div class="slots">${Array.from({ length: L }, (_, i) => {
+      if (show) return `<b class="${M.phase === "free" ? "g" : "r"}">${M.code[i]}</b>`;
+      if (i < M.guess.length) return `<b>${M.guess[i]}</b>`;
+      if (M.hints.includes(i)) return `<b class="ghost${i === M.guess.length ? " cur" : ""}">${M.code[i]}</b>`;
+      return `<b class="${i === M.guess.length ? "cur" : ""}">&nbsp;</b>`;
+    }).join("")}</div>`;
+    const hk = M.hist.map(h => h.g + h.c.join("")).join();
+    if ($("mmHist").dataset.k !== hk) { $("mmHist").dataset.k = hk; $("mmHist").innerHTML = M.hist.map((h, n) => `<div class="slots">${[...h.g].map((d, i) => `<b class="${h.c[i]}">${d}</b>`).join("")}<i>#${M.hist.length - n}</i></div>`).join(""); }
+  } else $("screen").textContent = scr;
+  $("hint").textContent = hint;
+  if (isRounds()) {
+    const N = roundsV();
+    $("tierBar").innerHTML = Array.from({ length: N }, (_, i) => `<i class="${i < M.res.length ? (M.res[i] ? "ok" : "ko") : App.armed && i === M.res.length && M.phase !== "final" ? "cur" : ""}"></i>`).join("");
+  } else $("tierBar").innerHTML = Array.from({ length: 10 }, (_, i) => `<i class="${i < M.tier ? "on" : ""}"></i>`).join("");
+  $("roundN").textContent = isRounds() ? `${Math.min(M.res.length + (App.armed && M.phase !== "final" ? 1 : 0), roundsV())}/${roundsV()}` : "—";
+  const f = M.final;
+  if (f && (M.phase === "final" || !App.armed)) {
+    scr = `${f.ok}/${f.N}`;
+    hint = f.pass ? (App.armed && t < f.until ? `🎁 Récompense ${Math.round(f.I)} % · ${Math.ceil((f.until - t) / 1000)} s` : "🎁 Réussi ! « Armer » pour une nouvelle séance")
+      : (App.armed ? `😈 Punition : ${f.n || 0} shock${(f.n || 0) > 1 ? "s" : ""} à ${Math.round(f.lvl || 0)} %` : "❌ Pas assez de réussites. « Armer » pour retenter");
+    $("screen").textContent = scr; $("hint").textContent = hint;
+  }
+  $("banner").textContent = !App.armed ? "🧠 Choisis une épreuve, puis « Armer »" : { code: "🎯 Master Mind", simon: "🎵 Simon", seq: "🎧 Séquence" }[game] + (M.tier > 1 ? ` · 🔥 ${M.tier} d'affilée` : "");
+  $("vibBar").style.width = M.curVib + "%"; $("vibVal").textContent = Math.round(M.curVib);
+  $("stimBar").style.width = M.curStim + "%"; $("stimVal").textContent = Math.round(M.curStim);
+  $("okN").textContent = M.ok; $("koN").textContent = M.ko; $("tierN").textContent = M.tier; $("koMax").textContent = Game.run ? " / " + (Game.run.p.lives + 1) : "";
+  const s = App.armed ? Math.floor((t - M.armedAt) / 1000) : 0; $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+/* ---------------- Initialisation ---------------- */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Mind Games", roleLabels: { vib: "Vibration (tease, paliers)", stim: "Shock (erreurs)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", 0, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); shock("test"); };
+const KEY = "mindCfg";
+const FIELDS = ["rounds","lenStep","passPct","rewTop","rewS","punN","punLvl","codeLen","mmTries","redMs","redStep","orMs","grVib","grS","winVib","winS","teaseLvl","simLen","reactMs","tierBase","tierStep","seqLen","peakLvl","inputS","errLvl","errEsc","pulseMs","maxVib","maxStim","sessionMax"];
+const CHECKS = ["haptic","peakZaps","sound","voice","mmUnique"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+applyEquip(); buildKeys(); setGame(game);
+Game.init("mind", {
+  apply: (p, on) => {
+    ["codeLen", "simLen", "seqLen", "reactMs", "mmTries"].forEach(id => { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; });
+    if (on) { $("codeLen").value = p.len; $("simLen").value = p.len; $("seqLen").value = p.len; $("reactMs").value = p.react; if (p.tries) $("mmTries").value = p.tries; }
+  },
+});
+Partner.init("mind", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "D'affilée", v: M.tier, max: 10, unit: "" },
+    phase: $("banner").textContent + ($("hint").textContent ? " · " + $("hint").textContent : ""),
+    chips: [["Épreuve", { code: "Master Mind", simon: "Simon", seq: "Séquence" }[game]], ...(isRounds() ? [["Tentative", $("roundN").textContent], ["Score", `${M.res.filter(Boolean).length}/${M.res.length}`]] : []), ["Réussies", M.ok], ["Erreurs", M.ko], ["D'affilée", M.tier],
+      ...(game === "code" && App.armed ? [["Code", M.code], ["Essai", `${M.tries}/${triesV()}`], ...(M.hist[0] ? [["Dernier", M.hist[0].g + " " + M.hist[0].c.map(x => ({ g: "🟢", o: "🟠", r: "🔴" })[x]).join("")]] : [])] : [])],
+    app: { kind: "mind", game, phase: M.phase, code: game === "code" ? M.code : "", rev: M.rev, tries: M.tries, maxTries: triesV(), simLen: M.simLen },
+  }),
+  actions: () => [
+    ...(!App.armed ? [{ id: "g:code", label: "🎯 Épreuve : Master Mind" }, { id: "g:simon", label: "🎵 Épreuve : Simon" }, { id: "g:seq", label: "🎧 Épreuve : séquence" }] : []),
+    ...(App.armed && game === "code" ? [{ id: "reveal", label: "💡 Indice (un chiffre en transparent)" }, { id: "tryPlus", label: "➕ 1 essai de plus" }] : []),
+    ...(App.armed ? [{ id: "tierUp", label: "⬆️ Vibration +1 cran" }, { id: "tierDown", label: "⬇️ Vibration −1 cran" }] : []),
+  ],
+  doAction: id => {
+    if (id.startsWith("g:")) setGame(id.slice(2));
+    else if (id === "reveal") codeReveal();
+    else if (id === "tryPlus") { M.tries = Math.max(0, M.tries - 1); log("🎮 Le Maître accorde un essai de plus."); }
+    else if (id === "tierUp") M.tier = Math.min(10, M.tier + 1);
+    else if (id === "tierDown") M.tier = Math.max(0, M.tier - 1);
+  },
+  onApp: d => {
+    if (d.op === "code" && /^\d{2,10}$/.test(d.code || "")) {
+      M.nextCode = d.code; log(`🔐 Le Maître a choisi un code de ${d.code.length} chiffres.`);
+      if (App.armed && game === "code") codeStart();
+    } else if (d.op === "simon" && Array.isArray(d.seq)) { M.nextSim = d.seq.map(z => clamp(+z | 0, 0, 3)); log(`🎵 Le Maître a composé une séquence de ${M.nextSim.length}.`); }
+  },
+});
+setInterval(tick, 100);
+log("Prêt. Choisis l'épreuve, puis « Armer ».");
+</script>
+</body>
+</html>

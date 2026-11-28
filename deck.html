@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Obedience Deck</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  #stage{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:46vh;text-align:center}
+  #submitBtn{width:min(78vw,340px);aspect-ratio:1;border-radius:50%;font-size:26px;font-weight:900;border:3px solid #c77dff;background:radial-gradient(circle at 50% 40%,#2c1840,#0f0a16);color:#fff;box-shadow:0 0 40px #c77dff33}
+  #submitBtn:disabled{opacity:.35}
+  #cardShow{font-size:22px;font-weight:800;min-height:1.4em}
+  #cardSub{color:var(--mute);min-height:1.2em}
+  #abandonBtn{background:#3a1d12;border:1px solid #a8552b;color:#ffb38a;font-weight:700;padding:12px 18px;border-radius:12px;position:relative;overflow:hidden}
+  #abandonFill{position:absolute;left:0;top:0;bottom:0;width:0;background:#ff6b6b44;pointer-events:none}
+  .cardRow{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;background:var(--panel2);border-radius:8px;padding:6px 8px;margin:4px 0;font-size:13px}
+  #locked{font-size:13px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Obedience Deck</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="banner" style="font-size:16px">🃏 En attente des cartes du Maître</div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips"><span>Paquets <b id="okN">0</b></span><span>Abandons <b id="koN">0</b><span id="koMax"></span></span><span id="qChip">Cartes <b id="qN">?</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secPlay" open>
+    <summary>🙇 Soumission</summary>
+    <div class="body">
+      <div id="stage">
+        <div id="cardShow"></div>
+        <div id="cardSub"></div>
+        <button id="submitBtn">Je me soumets</button>
+        <button id="abandonBtn" class="hidden"><div id="abandonFill"></div><span>✋ Abandonner (maintenir 2 s)</span></button>
+        <div id="locked"></div>
+      </div>
+      <p class="muted">Une fois soumis·e, le paquet se joue jusqu'au bout : intensités et durées sont tirées au hasard dans les limites fixées par le Maître. <b>Abandonner</b> déclenche la pénalité de brat. Le bouton <b>ARRÊT</b> coupe tout immédiatement, <b>sans pénalité</b>.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secGame"></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secLocal">
+    <summary>👑 Préparer le paquet ici (Maître sur place)</summary>
+    <div class="body">
+      <p class="muted">Pour le Maître présent sur ce téléphone. À distance, le Maître compose le paquet dans sa télécommande. Le contenu n'est jamais affiché côté soumis·e.</p>
+      <div id="builder"></div>
+      <div class="row"><button id="lAdd" class="primary">+ Ajouter la carte</button><button id="lRandom">🎲 Paquet surprise</button><button id="lClear">Vider</button></div>
+      <p class="muted" id="lInfo"></p>
+    </div>
+  </details>
+
+  <details class="card" id="secRules">
+    <summary>⚙️ Réglages</summary>
+    <div class="body">
+      <label class="f"><span>Montrer le nombre de cartes en attente</span><input id="showCount" type="checkbox" checked></label>
+      <label class="f"><span>Annoncer chaque carte au moment où elle tombe</span><input id="announce" type="checkbox" checked></label>
+      <label class="f"><span>Cartes du paquet surprise</span><input id="rndN" type="number" min="1" max="30" value="5"></label>
+      <label class="f"><span>Intensité max des cartes surprise (%)</span><input id="rndMax" type="number" min="1" max="100" value="60"></label>
+      <label class="f"><span>Immobilité : mouvement toléré (gyroscope, 0–100)</span><input id="stillThr" type="number" min="1" max="100" value="25"></label>
+      <label class="f"><span>Shocks des cartes mixtes : de (%)</span><input id="mixLo" type="number" min="0" max="100" value="8"></label>
+      <label class="f"><span>… à (%)</span><input id="mixHi" type="number" min="0" max="100" value="20"></label>
+      <label class="f"><span>Durée d'un shock (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="400"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secBrat" data-need="stim">
+    <summary>😈 Pénalité de brat (abandon)</summary>
+    <div class="body">
+      <label class="f"><span>Nombre de shocks</span><input id="penN" type="number" min="0" max="30" value="5"></label>
+      <label class="f"><span>Intensité (%)</span><input id="penLvl" type="number" min="0" max="100" value="20"></label>
+      <label class="f"><span>+ par shock (%)</span><input id="penEsc" type="number" min="0" max="20" value="2"></label>
+      <label class="f"><span>Intervalle (ms)</span><input id="penGap" type="number" min="600" max="5000" step="100" value="1200"></label>
+      <p class="muted">Toujours plafonnée par le plafond shock. ARRÊT l'interrompt immédiatement.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="60"></label>
+      <label class="f"><span>Sons</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="deckcards.js"></script>
+<script>
+"use strict";
+/* ======================================================================
+ * Obedience Deck : le Maître prépare des cartes cachées ; une fois
+ * « soumis·e », le paquet se joue automatiquement jusqu'au bout.
+ * ====================================================================== */
+let queue = [];                 // cartes en attente (jamais affichées côté soumis·e)
+const D = { run: null, card: null, t0: 0, res: null, timers: [], pen: null, ok: 0, ko: 0, curVib: 0, curStim: 0, lastMoveShock: 0 };
+let armedAt = 0;
+const P_ = () => Game.run ? Game.run.p : null;
+
+function addCards(cards, who){
+  const ok = (cards || []).map(DeckCards.clean).filter(Boolean);
+  queue.push(...ok);
+  if (ok.length) { log(`🃏 ${who} ajoute ${ok.length} carte${ok.length > 1 ? "s" : ""}.`); beep(740, 70); if (!D.run) Speak.say("Le Maître a préparé des cartes", "cards", 6000); }
+  Partner.send(true);
+}
+function surprise(){
+  const n = P_() ? P_().cards : num("rndN"), mx = P_() ? Math.round(num("maxStim") * P_().maxI / 100) : num("rndMax");
+  return DeckCards.random(n, mx, Equip.stim, Equip.vib);
+}
+
+/* ---------------- Déroulé ---------------- */
+function clearTimers(){ D.timers.forEach(t => Sched.cancel(t)); D.timers = []; }
+const after = (ms, f) => { const t = Sched.after(ms, f); D.timers.push(t); return t; };
+function shock(lvl, why){
+  if (!Equip.stim || lvl <= 0) return;
+  D.curStim = sendLevel("stim", lvl, true);
+  log(`⚡ ${Math.round(D.curStim)} % — ${why}`);
+  after(clamp(num("pulseMs"), 100, 2000), () => { D.curStim = sendLevel("stim", 0, true); });
+}
+function submit(){
+  if (!App.armed) return toast("Obedience Deck", "la séance doit être armée", "var(--warn)");
+  if (D.run || D.pen) return;
+  if (!queue.length) {
+    if (Game.run) queue = surprise();
+    else return toast("Aucune carte", "attends que le Maître prépare le paquet", "var(--mute)");
+  }
+  D.run = { cards: queue.splice(0), i: -1 };
+  log(`🙇 Soumission : ${D.run.cards.length} carte${D.run.cards.length > 1 ? "s" : ""} verrouillée${D.run.cards.length > 1 ? "s" : ""}.`);
+  Speak.say("Soumission acceptée"); beep(520, 200);
+  after(1500, next); Partner.send(true);
+}
+function next(){
+  const r = D.run; if (!r) return;
+  r.i++;
+  if (r.i >= r.cards.length) return finish();
+  const c = r.cards[r.i], res = DeckCards.resolve(c, num("mixLo"), num("mixHi"));
+  D.card = c; D.res = res; D.t0 = Date.now(); D.lastMoveShock = 0;
+  if ($("announce").checked) Speak.say(DeckCards.say(c, res));
+  log(`🃏 Carte ${r.i + 1}/${r.cards.length} : ${DeckCards.label(c, res)}`);
+  if (c.k === "zaps") {
+    const gap = res.gap;
+    for (let k = 0; k < res.n; k++) after(800 + k * gap, () => shock(res.lv[k], `shock ${k + 1}/${res.n}`));
+    after(800 + res.n * gap + 600, next);
+  } else if (c.k === "mix") {
+    let t = 1500; while (t < res.d * 1000 - 500) { const tt = t, l = res.zl(); after(tt, () => shock(l, "frappe")); t += 2500 + Math.random() * 5000; }
+    after(res.d * 1000, next);
+  } else after(res.d * 1000, next);
+  Partner.send(true);
+}
+function finish(){
+  const n = D.run ? D.run.cards.length : 0; D.run = null; D.card = null; D.res = null; clearTimers();
+  D.curVib = sendLevel("vib", 0, true); D.curStim = sendLevel("stim", 0, true);
+  D.ok++; log(`✅ Paquet terminé (${n} carte${n > 1 ? "s" : ""}).`); Speak.say("Paquet terminé. Bien"); beep(1320, 120, 3);
+  if (Game.run) Game.progress(D.ok);
+  Partner.send(true);
+}
+/* Abandon = pénalité de brat (ARRÊT n'en déclenche jamais) */
+function abandon(){
+  if (!D.run) return;
+  clearTimers(); D.run = null; D.card = null; D.res = null; D.ko++;
+  D.curVib = sendLevel("vib", 0, true);
+  log("✋ Abandon : pénalité de brat."); Speak.say("Abandon. Pénalité");
+  const N = Equip.stim ? Math.round(num("penN")) : 0;
+  D.pen = { n: N, k: 0 };
+  for (let k = 0; k < N; k++) after(600 + k * num("penGap"), () => { D.pen.k = k + 1; shock(num("penLvl") + k * num("penEsc"), `pénalité ${k + 1}/${N}`); });
+  after(600 + N * num("penGap") + 400, () => { D.pen = null; log("🔓 Pénalité terminée."); if (Game.run) Game.loseLife(); Partner.send(true); });
+  Partner.send(true);
+}
+(() => {   // abandon : maintenir 2 s
+  const b = $("abandonBtn"); let t0 = 0, raf = null;
+  const stop = () => { t0 = 0; $("abandonFill").style.width = "0"; cancelAnimationFrame(raf); };
+  const step = () => { if (!t0) return; const p = (Date.now() - t0) / 2000; $("abandonFill").style.width = Math.min(100, p * 100) + "%"; if (p >= 1) { stop(); abandon(); } else raf = requestAnimationFrame(step); };
+  b.addEventListener("pointerdown", e => { e.preventDefault(); t0 = Date.now(); step(); });
+  ["pointerup", "pointerleave", "pointercancel"].forEach(n => b.addEventListener(n, stop));
+})();
+$("submitBtn").onclick = submit;
+
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) { armedAt = Date.now(); D.ok = 0; D.ko = 0; log("Séance armée."); Game.start(); if (Gyro && !Gyro.on && Equip.gyro) Gyro.start().catch(() => {}); }
+  else { clearTimers(); D.run = null; D.pen = null; D.card = null; D.curVib = sendLevel("vib", 0, true); D.curStim = sendLevel("stim", 0, true); Game.end(); }
+  Partner.send(true);
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT (aucune pénalité)"); }
+
+/* ---------------- Boucle ---------------- */
+function tick(){
+  const t = Date.now(); let vib = 0;
+  if (App.armed && D.card && D.res) {
+    const c = D.card, r = D.res, ms = t - D.t0;
+    if (c.k === "reward") vib = VibFx.level({ type: "wave", I: r.i, D: r.d }, ms);
+    else if (c.k === "tease") vib = VibFx.level({ type: "tease", I: r.i, D: r.d, seed: r.seed }, ms);
+    else if (c.k === "mix") vib = r.i;
+    else if (c.k === "still") {
+      const m = Gyro.sample ? Gyro.sample(2.5, 90) : null;
+      if (m != null && m > num("stillThr") && t - D.lastMoveShock > 2000) { D.lastMoveShock = t; shock(r.i, "tu as bougé"); Speak.say("Ne bouge pas", "still", 2500); }
+    }
+  }
+  if (App.armed) D.curVib = sendLevel("vib", vib);
+  const maxMin = num("sessionMax");
+  if (App.armed && maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  draw();
+}
+function draw(){
+  const running = !!D.run, pen = !!D.pen;
+  $("submitBtn").classList.toggle("hidden", running || pen);
+  $("submitBtn").disabled = !App.armed || (!queue.length && !Game.run);
+  $("abandonBtn").classList.toggle("hidden", !running);
+  const c = D.card, r = D.res;
+  $("cardShow").textContent = pen ? "😈 Pénalité de brat" : running && c ? DeckCards.icon(c) + " " + DeckCards.title(c) : !App.armed ? "Arme la séance" : queue.length ? "Des cartes t'attendent" : Game.run ? "Paquet surprise de la carrière" : "En attente du Maître…";
+  $("cardSub").textContent = pen ? `${D.pen.k}/${D.pen.n}` : running && c && r ? (c.k === "zaps" ? `${r.n} shocks` : `${Math.max(0, Math.ceil(r.d - (Date.now() - D.t0) / 1000))} s`) + ` · carte ${D.run.i + 1}/${D.run.cards.length}` : "";
+  $("locked").textContent = running ? "🔒 Paquet verrouillé" : pen ? "🔒 Déverrouillage après la pénalité" : "";
+  $("banner").textContent = pen ? "😈 Pénalité de brat en cours" : running ? "🔒 Le paquet se joue…" : !App.armed ? "« Armer » pour commencer" : queue.length ? "🙇 Prêt·e ? Appuie sur « Je me soumets »" : "🃏 En attente des cartes du Maître";
+  $("vibBar").style.width = D.curVib + "%"; $("vibVal").textContent = Math.round(D.curVib);
+  $("stimBar").style.width = D.curStim + "%"; $("stimVal").textContent = Math.round(D.curStim);
+  $("okN").textContent = D.ok; $("koN").textContent = D.ko; $("koMax").textContent = Game.run ? " / " + (Game.run.p.lives + 1) : "";
+  $("qChip").classList.toggle("hidden", !$("showCount").checked); $("qN").textContent = queue.length;
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0; $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  $("lInfo").textContent = `${queue.length} carte${queue.length > 1 ? "s" : ""} en attente.`;
+}
+
+/* ---------------- Initialisation ---------------- */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Obedience Deck", roleLabels: { vib: "Vibration (cartes)", stim: "Shock (cartes, pénalités)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", 0, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); shock(num("mixLo"), "test"); };
+DeckCards.builder($("builder"));
+$("lAdd").onclick = () => addCards([DeckCards.read($("builder"))], "Le Maître (sur place)");
+$("lRandom").onclick = () => addCards(surprise(), "Le paquet surprise");
+$("lClear").onclick = () => { queue = []; log("🃏 Paquet vidé."); Partner.send(true); };
+const KEY = "deckCfg";
+const FIELDS = ["rndN","rndMax","stillThr","mixLo","mixHi","pulseMs","penN","penLvl","penEsc","penGap","maxVib","maxStim","sessionMax"];
+const CHECKS = ["showCount","announce","sound","voice"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+applyEquip();
+Game.init("deck", { apply: (p, on) => { ["rndN", "rndMax"].forEach(id => { $(id).disabled = on; }); if (on) { $("rndN").value = p.cards; $("rndMax").value = Math.round(num("maxStim") * p.maxI / 100); } } });
+Partner.init("deck", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Cartes en attente", v: queue.length, max: Math.max(10, queue.length), unit: "" },
+    phase: $("banner").textContent,
+    chips: [["En attente", queue.length], ["Paquets", D.ok], ["Abandons", D.ko], ...(D.run && D.card ? [["Carte", `${D.run.i + 1}/${D.run.cards.length} ${DeckCards.label(D.card, D.res)}`]] : [])],
+    app: { kind: "deck", queue: queue.length, running: !!D.run, pen: !!D.pen },
+  }),
+  actions: () => !App.armed ? [] : [{ id: "rnd", label: "🎲 Ajouter un paquet surprise" }, { id: "clear", label: "🗑️ Vider le paquet" }],
+  doAction: id => { if (id === "rnd") addCards(surprise(), "Le Maître (surprise)"); else if (id === "clear") { queue = []; log("🃏 Le Maître vide le paquet."); } },
+  onApp: d => { if (d.op === "add") addCards(d.cards, "Le Maître"); else if (d.op === "clear") { queue = []; log("🃏 Le Maître vide le paquet."); Partner.send(true); } },
+});
+setInterval(tick, 100);
+log("Prêt. Le Maître prépare des cartes (télécommande ou « Préparer le paquet ici »), puis « Je me soumets ».");
+</script>
+</body>
+</html>

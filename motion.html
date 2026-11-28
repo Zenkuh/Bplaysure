@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Keep Pose</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .camWrap{position:relative}
+  .camWrap video{max-height:none}
+  #poseOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #recBox{background:#132a1c;border:1px solid #1f5a33;border-radius:12px;padding:12px;margin:10px 0}
+  #recBig{font-size:28px;font-weight:800;text-align:center}
+  .recUnder{margin-top:8px}
+  .recUnder .row{margin-top:0}
+  #recBtn{flex:1}
+  #repChart{width:100%;height:150px;background:var(--panel2);border-radius:8px;display:block;margin:8px 0}
+  .repGrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:13px}
+  .repGrid b{color:var(--fg)}
+  #repTitle{font-size:20px;font-weight:800;text-align:center;margin:4px 0}
+  #touchPad{position:relative;height:55vh;min-height:300px;border-radius:14px;background:#0b0b10;border:1px solid var(--line);touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden}
+  #touchPad.full{position:fixed;inset:0;height:auto;border-radius:0;z-index:9;border:0}
+  nav.actions{z-index:12}
+  #touchCv{position:absolute;inset:0;width:100%;height:100%}
+  #padInfo{position:absolute;left:0;right:0;top:12px;text-align:center;font-weight:700;font-size:17px;pointer-events:none}
+  #padStop{position:absolute;right:12px;bottom:14px;z-index:2;background:#b3261e;color:#fff;border:0;font-weight:800;padding:12px 18px;border-radius:12px;display:none}
+  #touchPad.full #padStop{display:block}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Keep Pose</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="poseBanner" style="font-size:16px">📍 Posture à enregistrer</div>
+    <div class="stat"><span id="motionLbl">Écart</span><div class="meter" id="motionMeter"><div id="motionBar" class="accC"></div></div><span id="motionVal">0</span></div>
+    <div class="stat" id="jerkRow"><span>Brusque</span><div class="meter" id="jerkMeter"><div id="jerkBar" class="warnC"></div></div><span id="jerkVal">0</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips"><span id="progLbl">Tenue</span><span><b id="stillT">0.0</b><span id="goalT"></span> s</span><span>Infractions <b id="violN">0</b><span id="violMax"></span></span><span data-need="stim">Shocks <b id="pulseN">0</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card hidden" id="secReport" open>
+    <summary>📊 Rapport de la dernière séance</summary>
+    <div class="body">
+      <div id="repTitle"></div>
+      <div class="repGrid" id="repGrid"></div>
+      <canvas id="repChart" width="700" height="170"></canvas>
+      <p class="muted">Violet : écart à la posture · orange : mouvements brusques · pointillés : tes seuils · traits rouges : infractions.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secDetect" open>
+    <summary>👁️ Détection <small id="srcSum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Source</span>
+        <select id="source">
+          <option value="pose" data-need="cam">📍 Posture : squelette IA (caméra)</option>
+          <option value="image" data-need="cam">📍 Posture : image de référence (caméra)</option>
+          <option value="tilt" data-need="gyro">📍 Posture : inclinaison du téléphone</option>
+          <option value="touch">📍 Doigt (ou nez, front) sur l'écran</option>
+          <option value="squat" data-need="gyro">📍 Squat / chaise au mur (téléphone en poche)</option>
+          <option value="both" data-need="cam,gyro">Mouvement : caméra + gyroscope</option>
+          <option value="camera" data-need="cam">Mouvement : caméra</option>
+          <option value="gyro" data-need="gyro">Mouvement : gyroscope</option>
+          <option value="sim">Simulation (test)</option>
+        </select>
+      </label>
+      <div id="camPanel" data-need="cam">
+        <div class="row">
+          <select id="facing"><option value="user">Caméra avant</option><option value="environment">Caméra arrière</option></select>
+          <button id="camBtn">Démarrer la caméra</button>
+        </div>
+        <div class="camWrap"><video id="video" autoplay playsinline muted></video><canvas id="poseOv"></canvas></div>
+      </div>
+      <div id="touchPanel">
+        <div id="touchPad"><canvas id="touchCv"></canvas><div id="padInfo">Pose ton doigt dans le cercle</div><button id="padStop">ARRÊT</button></div>
+        <label class="f"><span>Taille du cercle (rayon, px)</span><input id="touchR" type="number" min="25" max="250" value="70"></label>
+        <label class="f"><span>Plein écran pendant la séance</span><input id="touchFull" type="checkbox" checked></label>
+        <p class="muted">Garde le doigt (ou le bout du nez, le front) dans le cercle. Lever, sortir du cercle ou bouger au-delà de la tolérance = posture perdue. L'écart se mesure depuis l'endroit où tu as posé le doigt. Le compteur démarre au premier contact.</p>
+      </div>
+      <div id="squatPanel">
+        <p class="muted">Glisse le téléphone dans la poche avant du pantalon, <b>debout dans la poche</b> (haut du téléphone vers la hanche), prends la position (chaise contre le mur, squat profond, pointe des pieds…), puis enregistre-la. La cuisse ne doit plus bouger : l'angle du téléphone mesure la profondeur, le baromètre voit si tu remontes, l'accéléromètre mesure les tremblements.</p>
+        <label class="f"><span>Angle de cuisse = 100 % d'écart (°)</span><input id="sqAng" type="number" min="5" max="90" value="60"></label>
+        <label class="f"><span>Remontée = 100 % d'écart (cm, baromètre)</span><input id="sqH" type="number" min="10" max="300" value="60"></label>
+        <label class="f"><span>Tremblements tolérés (m/s²)</span><input id="sqTrem" type="number" min="0.1" max="10" step="0.1" value="1.2"></label>
+        <p class="muted" id="sqInfo">Avec la tolérance à 16 %, cela laisse environ 10° et 10 cm.</p>
+      </div>
+      <div id="posePanel" class="recUnder">
+        <div class="row">
+          <select id="recDelay"><option value="0">tout de suite</option><option value="5" selected>dans 5 s</option><option value="10">dans 10 s</option><option value="20">dans 20 s</option></select>
+          <button id="recBtn" class="primary">📍 Enregistrer la posture</button>
+        </div>
+        <div id="recBox" class="hidden"><div id="recBig">5</div><p class="muted" style="text-align:center;margin:4px 0 0">Mets-toi en position et ne bouge plus…</p></div>
+        <p class="muted" id="poseInfo">Aucune posture enregistrée.</p>
+        <label class="f"><span>Départ guidé : la posture est enregistrée à chaque armement</span><input id="autoRec" type="checkbox" checked></label>
+        <label class="f"><span>Sortie du cadre plus de 1,5 s = infraction</span><input id="lostIsMove" type="checkbox"></label>
+        <div id="poseOnly">
+          <label class="f"><span>Modèle IA</span>
+            <select id="poseModel"><option value="lite" selected>Lite (rapide)</option><option value="full">Full (plus précis, plus lourd)</option></select>
+          </label>
+          <label class="f"><span>Orientation du visage</span>
+            <select id="faceMode"><option value="none" selected>Ne pas vérifier</option><option value="to">Regarder la caméra</option><option value="away">Visage détourné de la caméra (coin)</option></select>
+          </label>
+        </div>
+        <p class="muted" id="poseHelp"></p>
+      </div>
+      <div id="motionCamOpts" data-need="cam">
+        <label class="f"><span>Seuil de bruit (pixels)</span><input id="pixThr" type="range" min="5" max="80" value="25"></label>
+        <label class="f"><span>% d'image en mouvement = 100</span><input id="camMax" type="number" min="1" max="100" value="25"></label>
+      </div>
+      <div id="gyroPanel" data-need="gyro">
+        <div class="row"><button id="gyroBtn">Activer le gyroscope</button><span class="muted">brut <b id="gyroRaw">—</b></span></div>
+        <label class="f"><span>Accélération = 100 (m/s²)</span><input id="accMax" type="number" min="0.1" max="20" step="0.1" value="2.5"></label>
+        <label class="f"><span>Rotation = 100 (°/s)</span><input id="rotMax" type="number" min="5" max="720" step="5" value="90"></label>
+        <p class="muted">Pose ou attache le téléphone sur toi (cuisse, ventre, dos) ou sur le lit. Valeur plus basse = plus sensible.</p>
+      </div>
+      <div id="simWrap">
+        <label class="f"><span>Écart / mouvement simulé</span><input id="simVal" type="range" min="0" max="100" value="0"></label>
+        <label class="f"><span>Mouvement brusque simulé</span><input id="simJerk" type="range" min="0" max="30" value="0"></label>
+      </div>
+      <label class="f"><span>Lissage</span><input id="smooth" type="range" min="0" max="95" value="40"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secSens">
+    <summary>🎚️ Sensibilité <small id="sensSum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Tolérance aux écarts de pose</span>
+        <select id="tolPreset"><option value="">Personnalisée</option><option value="24">Très souple</option><option value="20">Souple</option><option value="16">Normale</option><option value="12">Stricte</option><option value="8">Très stricte</option></select>
+      </label>
+      <label class="f"><span>Tolérance : écart toléré (posture) ou mouvement toléré (%)</span><input id="stillThr" type="number" min="0" max="100" value="16"></label>
+      <label class="f"><span>Écart soutenu avant infraction (ms)</span><input id="moveHold" type="number" min="0" max="5000" step="50" value="1000"></label>
+      <div id="sensPose">
+        <label class="f"><span>Sensibilité aux mouvements brusques</span>
+          <select id="jerkPreset"><option value="">Personnalisée</option><option value="8">Très faible</option><option value="6">Faible</option><option value="4">Normale</option><option value="3">Élevée</option><option value="2">Très élevée</option></select>
+        </label>
+        <label class="f"><span>Seuil de mouvement brusque (%)</span><input id="jerkThr" type="number" min="0.5" max="30" step="0.5" value="4"></label>
+        <label class="f"><span>Poids des poignets dans l'écart (0–1)</span><input id="wristW" type="number" min="0" max="1" step="0.05" value="0.7"></label>
+        <p class="muted">L'écart compare la place de chaque articulation par rapport au centre de ton corps (hanches), rapportée à la taille de ton buste, et ajoute le déplacement du corps entier. Un mouvement brusque compte tout de suite s'il dépasse 2,5 × le seuil, sinon s'il dure plus de 0,9 s.</p>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secGoal">
+    <summary>🎯 Objectif & pénalités <small id="goalSum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Type d'objectif</span>
+        <select id="goalType"><option value="hold" selected>Temps de posture tenue (selon l'option « posture perdue »)</option><option value="timer">Minuteur : rester en pose jusqu'au bout</option></select>
+      </label>
+      <label class="f"><span>Durée à atteindre (s, 0 = aucune)</span><input id="holdGoal" type="number" min="0" max="7200" step="5" value="0"></label>
+      <label class="f"><span>Durée aléatoire et cachée</span><input id="randomGoal" type="checkbox"></label>
+      <label class="f" id="goalMaxRow"><span>… jusqu'à (s)</span><input id="goalMax" type="number" min="0" max="7200" step="5" value="300"></label>
+      <label class="f"><span>Pénalité à la 1re infraction : temps en plus (s)</span><input id="penaltyS" type="number" min="0" max="600" value="0"></label>
+      <label class="f"><span>+ à chaque infraction suivante (s)</span><input id="penaltyInc" type="number" min="0" max="600" value="0"></label>
+      <label class="f"><span>Intervalle minimal entre deux infractions (s)</span><input id="minGap" type="number" min="0" max="120" value="3"></label>
+      <label class="f"><span>Infractions max avant échec (0 = illimité)</span><input id="maxViol" type="number" min="0" max="100" value="0"></label>
+      <label class="f"><span>Quand l'objectif est atteint</span>
+        <select id="onGoal"><option value="continue" selected>Continuer la séance</option><option value="stop">Arrêter la séance</option></select>
+      </label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <p class="muted">Infractions : écart à la posture, mouvement brusque, sortie du cadre, orientation du visage. Le partenaire peut aussi ajouter du temps depuis sa télécommande.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secVib" data-need="vib">
+    <summary>〰️ Posture tenue → vibration</summary>
+    <div class="body">
+      <label class="f"><span>Vibration de base (%)</span><input id="vibBase" type="number" min="0" max="100" value="10"></label>
+      <label class="f"><span>Montée progressive entre paliers</span><input id="vibRamp" type="checkbox" checked></label>
+      <label class="f"><span>Quand la posture est perdue</span>
+        <select id="vibOnMove">
+          <option value="off" selected>Vibration coupée + compteur à zéro</option>
+          <option value="reset">Compteur à zéro (vibration de base gardée)</option>
+          <option value="pause">Compteur en pause (vibration de base gardée)</option>
+          <option value="pauseoff">Compteur en pause + vibration coupée</option>
+        </select>
+      </label>
+      <table id="vibTable"><thead><tr><th>Après X s tenue</th><th>Vibration %</th><th></th></tr></thead><tbody></tbody></table>
+      <button id="addVib">+ Palier</button>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Posture perdue → shock</summary>
+    <div class="body">
+      <label class="f"><span>Shock à chaque infraction</span><input id="shockOnViol" type="checkbox" checked></label>
+      <label class="f"><span>Durée d'une impulsion (ms)</span><input id="pulseMs" type="number" min="100" max="3000" step="50" value="600"></label>
+      <label class="f"><span>Pause minimale entre impulsions (ms)</span><input id="cooldown" type="number" min="1000" max="30000" step="100" value="2500"></label>
+      <label class="f"><span>Escalade par récidive (+%)</span><input id="escStep" type="number" min="0" max="50" value="0"></label>
+      <label class="f"><span>Fenêtre de récidive (s)</span><input id="escWindow" type="number" min="1" max="120" value="15"></label>
+      <table id="stimTable"><thead><tr><th>Si écart ≥</th><th>Shock %</th><th></th></tr></thead><tbody></tbody></table>
+      <button id="addStim">+ Palier</button>
+      <p class="muted">Tant que l'écart reste au-dessus d'un palier, un shock part après le délai « écart soutenu ». Un mouvement brusque ou une autre infraction déclenche le premier palier.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="30"></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script>
+"use strict";
+/* ====================================================================
+ * Capteurs
+ * ==================================================================== */
+const cam = new CamMotion($("video"));
+let rawMotion = 0, motion = 0, jerk = 0;
+
+$("camBtn").onclick = async () => {
+  if (cam.on) { cam.stop(); $("camBtn").textContent = "Démarrer la caméra"; return; }
+  try { await cam.start($("facing").value); $("camBtn").textContent = "Arrêter la caméra"; log("Caméra démarrée."); }
+  catch (e) { log("Caméra indisponible : " + e.message); }
+};
+$("facing").onchange = () => { if (cam.on) { cam.stop(); $("camBtn").onclick(); } };
+$("gyroBtn").onclick = async () => {
+  if (Gyro.on) { Gyro.stop(); $("gyroBtn").textContent = "Activer le gyroscope"; return; }
+  try { await Gyro.start(); $("gyroBtn").textContent = "Désactiver le gyroscope"; log("Gyroscope activé."); }
+  catch (e) { log(e.message); }
+};
+const isAIPose = () => $("source").value === "pose";
+const hasJerk = () => isAIPose() || $("source").value === "sim" || $("source").value === "squat";
+function updateSourceUI(){
+  const s = $("source").value;
+  $("srcSum").textContent = $("source").options[$("source").selectedIndex].text;
+  $("camPanel").classList.toggle("hidden", !Equip.cam || !(s === "camera" || s === "both" || s === "pose" || s === "image"));
+  $("gyroPanel").classList.toggle("hidden", !Equip.gyro || !(s === "gyro" || s === "both" || s === "tilt" || s === "squat"));
+  $("posePanel").classList.toggle("hidden", !isPosture() || s === "touch");
+  $("touchPanel").classList.toggle("hidden", s !== "touch");
+  $("squatPanel").classList.toggle("hidden", s !== "squat");
+  if (s === "squat") startSquatSensors();
+  $("poseOnly").classList.toggle("hidden", s !== "pose");
+  $("sensPose").classList.toggle("hidden", !hasJerk());
+  $("jerkRow").classList.toggle("hidden", !hasJerk());
+  $("motionCamOpts").classList.toggle("hidden", !Equip.cam || !(s === "camera" || s === "both"));
+  if (s === "pose") Pose.load();
+  poseInfo();
+  $("simWrap").classList.toggle("hidden", s !== "sim");
+}
+$("source").onchange = updateSourceUI;
+$("poseModel").onchange = () => { Pose.reset(); if (isAIPose()) Pose.load(); };
+
+function sampleMotion(dt){
+  const s = $("source").value;
+  if (s === "sim") { rawMotion = num("simVal"); jerk = num("simJerk") / 100; poseLost = false; faceScore = 1; return; }
+  if (isPosture()) {
+    const raw = measure();
+    recordStep(raw);
+    if (s === "squat") {
+      const tr = Gyro.tremor();
+      if (tr != null) { trem = trem * 0.6 + tr * 0.4; jerk = trem / Math.max(0.05, num("sqTrem")) * num("jerkThr") / 100; }   // même échelle que « brusque »
+    }
+    if (s === "pose") {
+      const m = PoseMetrics.update(raw, refOk() ? ref.data : null, dt);
+      poseLost = !m; jerk = m ? m.jerk : 0;
+      if (m) rawMotion = m.drift * 100;
+      faceScore = raw ? (raw[0][2] + raw[2][2] + raw[5][2]) / 3 : null;
+      return;
+    }
+    const d = deviation(raw, refOk() && ref ? ref.data : null);
+    poseLost = d == null;
+    if (!poseLost) rawMotion = d;
+    return;
+  }
+  poseLost = false;
+  const vals = [];
+  if (s === "camera" || s === "both") { const m = cam.sample(num("pixThr")); if (m != null) vals.push(clamp(m / Math.max(1, num("camMax")) * 100, 0, 100)); }
+  if (s === "gyro" || s === "both") { const g = Gyro.sample(num("accMax"), num("rotMax")); if (g != null) { vals.push(g); $("gyroRaw").textContent = g.toFixed(0); } }
+  rawMotion = vals.length ? Math.max(...vals) : 0;
+}
+
+/* ====================================================================
+ * Keep Pose : posture de référence et écart
+ *  - squelette IA (MediaPipe Pose, intégré à l'application)
+ *  - image de référence (sans IA : différence avec une photo de la posture)
+ *  - inclinaison du téléphone (angle par rapport à l'orientation enregistrée)
+ * Écart 0–100 % : 0 = posture identique.
+ * ==================================================================== */
+const POSTURE = ["pose", "image", "tilt", "touch", "squat"];
+let trem = 0;
+/* ---- Doigt sur l'écran ---- */
+const Touch = { down: false, started: false, x: 0, y: 0, ax: 0, ay: 0, id: null };
+(() => {
+  const pad = $("touchPad"), pos = e => { const r = pad.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  pad.addEventListener("pointerdown", e => {
+    if (e.target.id === "padStop") return;
+    if (Touch.down && Touch.id !== e.pointerId) return;
+    e.preventDefault(); try { pad.setPointerCapture(e.pointerId); } catch {}
+    const [x, y] = pos(e); Object.assign(Touch, { down: true, started: true, x, y, ax: x, ay: y, id: e.pointerId });
+  });
+  pad.addEventListener("pointermove", e => { if (Touch.down && e.pointerId === Touch.id) { const [x, y] = pos(e); Touch.x = x; Touch.y = y; } });
+  const up = e => { if (e.pointerId === Touch.id) { Touch.down = false; Touch.id = null; } };
+  pad.addEventListener("pointerup", up); pad.addEventListener("pointercancel", up); pad.addEventListener("lostpointercapture", up);
+  pad.addEventListener("contextmenu", e => e.preventDefault());
+  $("padStop").onclick = () => emergencyStop();
+})();
+function touchDev(){
+  if (!Touch.started) return null;
+  if (!Touch.down) return 100;
+  const pad = $("touchPad"), cx = pad.clientWidth / 2, cy = pad.clientHeight / 2, R = num("touchR");
+  if (Math.hypot(Touch.x - cx, Touch.y - cy) > R) return 100;
+  return clamp(Math.hypot(Touch.x - Touch.ax, Touch.y - Touch.ay) / R * 100, 0, 100);
+}
+function drawTouch(){
+  const pad = $("touchPad"), cv = $("touchCv"); if ($("source").value !== "touch") return;
+  pad.classList.toggle("full", App.armed && $("touchFull").checked);
+  const W = pad.clientWidth, H = pad.clientHeight; if (!W) return;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const x = cv.getContext("2d"), R = num("touchR"), held = Touch.down && motion < num("stillThr");
+  x.clearRect(0, 0, W, H);
+  x.lineWidth = 6; x.strokeStyle = !Touch.started ? "#4cc9f0" : held ? "#52d273" : "#ff6b6b";
+  x.fillStyle = held ? "#52d27322" : "#ffffff08";
+  x.beginPath(); x.arc(W / 2, H / 2, R, 0, 7); x.fill(); x.stroke();
+  x.lineWidth = 1; x.strokeStyle = "#ffffff33"; x.beginPath(); x.arc(W / 2, H / 2, R * 0.25, 0, 7); x.stroke();
+  if (Touch.down) { x.fillStyle = "#ffffffaa"; x.beginPath(); x.arc(Touch.x, Touch.y, 10, 0, 7); x.fill(); }
+  const left = goalTarget() || (Game.run ? Game.target("goal") : 0);
+  $("padInfo").textContent = !Touch.started ? "Pose ton doigt dans le cercle" : !Touch.down ? "⚠️ Remets ton doigt !" : held ? `✅ Tiens bon · ${progressVal().toFixed(0)}${left ? " / " + (goalHidden ? "??" : left) : ""} s` : "⚠️ Ne bouge pas !";
+}
+/* ---- Squat : inclinaison de la cuisse + baromètre + tremblements ---- */
+function startSquatSensors(){
+  if (!Gyro.on) Gyro.start().then(() => log("Accéléromètre activé.")).catch(e => log(e.message));
+  if (Sensors.native) Sensors.start({ accel: false, gps: false, mic: false, baro: true });
+}
+const isPosture = () => POSTURE.includes($("source").value);
+const BONES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+let ref = store.get("keepPoseRef", null);   // { src, data, at }
+let poseLost = true, curPose = null, recording = null, faceScore = null;
+
+const Pose = {
+  lm: null, state: "off", model: null,
+  reset(){ try { if (this.lm) this.lm.close(); } catch {} this.lm = null; this.state = "off"; },
+  async load(){
+    if (this.state !== "off") return;
+    const want = $("poseModel").value;
+    this.state = "loading"; $("poseHelp").textContent = "Chargement de la reconnaissance de posture…";
+    try {
+      const vision = await import("./mp/vision_bundle.js");
+      const files = await vision.FilesetResolver.forVisionTasks(new URL("mp/wasm", location.href).href);
+      const make = m => vision.PoseLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: new URL(`mp/pose_landmarker_${m}.task`, location.href).href, delegate: "CPU" },
+        runningMode: "VIDEO", numPoses: 1,
+      });
+      try { this.lm = await make(want); this.model = want; }
+      catch (e) { if (want === "lite") throw e; log("⚠ Modèle Full absent : modèle Lite utilisé."); this.lm = await make("lite"); this.model = "lite"; }
+      this.state = "ready"; log(`Reconnaissance de posture prête (${this.model}).`); $("poseHelp").textContent = "";
+    } catch (e) {
+      this.state = "error";
+      log("⚠ Reconnaissance de posture indisponible (" + e.message + ").");
+      $("poseHelp").textContent = "⚠ Le modèle IA n'est pas disponible dans cette version : choisis « image de référence ».";
+    }
+  },
+  detect(v){
+    if (this.state !== "ready" || !cam.on || v.readyState < 2) return null;
+    try { const r = this.lm.detectForVideo(v, performance.now()); return r.landmarks && r.landmarks[0] ? r.landmarks[0] : null; }
+    catch { return null; }
+  }
+};
+
+/* Filtre « One Euro » : lisse le squelette au repos sans retarder les vrais mouvements */
+const OneEuro = {
+  f: {}, last: 0, minCut: 1.0, beta: 0.6, dCut: 1.0,
+  a: (cut, dt) => { const r = 2 * Math.PI * cut * dt; return r / (r + 1); },
+  reset(){ this.f = {}; this.last = 0; },
+  apply(P){
+    const t = performance.now() / 1000, dt = this.last ? clamp(t - this.last, 1 / 60, 0.5) : 0; this.last = t;
+    if (!dt || t - this.lastSeen > 1.2) this.f = {};
+    this.lastSeen = t;
+    return P.map((p, i) => {
+      const o = [p.x, p.y, p.visibility ?? 1];
+      for (let k = 0; k < 2; k++) {
+        const key = i * 2 + k, s = this.f[key];
+        if (!s || !dt) { this.f[key] = { x: o[k], dx: 0 }; continue; }
+        const dx = (o[k] - s.x) / dt, edx = s.dx + this.a(this.dCut, dt) * (dx - s.dx);
+        const cut = this.minCut + this.beta * Math.abs(edx);
+        s.x = s.x + this.a(cut, dt) * (o[k] - s.x); s.dx = edx; o[k] = s.x;
+      }
+      return o;
+    });
+  },
+};
+
+/* ---------------------------------------------------------------------
+ * Mesure de posture « centrée sur le corps » (squelette IA)
+ *  - écart : position de chaque articulation par rapport au centre du corps,
+ *    rapportée à la taille du buste de la posture enregistrée, + déplacement
+ *    global du corps ; score = max(moyenne, 2e plus grand écart)
+ *  - brusque : la même mesure entre deux images successives (vitesse)
+ * --------------------------------------------------------------------- */
+const TRK = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+const PoseMetrics = {
+  prev: null, prevC: null,
+  reset(){ this.prev = null; this.prevC = null; },
+  frame(P){
+    const v = $("video"), ar = v.videoWidth && v.videoHeight ? v.videoWidth / v.videoHeight : 4 / 3;
+    const ok = i => P[i][2] > 0.5, pt = i => [P[i][0] * ar, P[i][1]];
+    const mid = (a, b) => [(pt(a)[0] + pt(b)[0]) / 2, (pt(a)[1] + pt(b)[1]) / 2];
+    const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+    const c = ok(23) && ok(24) ? mid(23, 24) : ok(11) && ok(12) ? mid(11, 12) : null;
+    if (!c) return null;
+    const cand = [];
+    if (ok(11) && ok(12)) cand.push(d(pt(11), pt(12)));
+    if (ok(23) && ok(24)) cand.push(d(pt(23), pt(24)));
+    if (ok(11) && ok(12) && ok(23) && ok(24)) cand.push(d(mid(11, 12), mid(23, 24)));
+    const scale = Math.max(0, ...cand.filter(x => x > 0.01)) || 0.3;
+    const pts = {}; for (const i of TRK) if (ok(i)) pts[i] = pt(i);
+    return { c, scale, pts };
+  },
+  score(A, B, cA, cB, s, wristW){
+    const v = [];
+    for (const i of TRK) {
+      if (!A[i] || !B[i]) continue;
+      const w = i === 15 || i === 16 ? wristW : 1;
+      v.push(Math.hypot((A[i][0] - cA[0]) - (B[i][0] - cB[0]), (A[i][1] - cA[1]) - (B[i][1] - cB[1])) / s * w);
+    }
+    if (v.length < 6) return null;                  // trop peu d'articulations visibles des deux côtés
+    v.sort((a, b) => a - b);
+    const mean = v.reduce((a, b) => a + b, 0) / v.length;
+    return Math.max(mean, v[v.length - 2]);
+  },
+  /* → { drift, jerk } (0–1+) ou null si posture introuvable */
+  update(raw, refData, dt){
+    if (!raw || !refData) { this.reset(); return null; }
+    const cur = this.frame(raw), R = this.frame(refData);
+    if (!cur || !R) { this.reset(); return null; }
+    const wristW = clamp(num("wristW"), 0, 1);
+    const shape = this.score(cur.pts, R.pts, cur.c, R.c, R.scale, wristW);
+    if (shape == null) { this.reset(); return null; }
+    const global = Math.hypot(cur.c[0] - R.c[0], cur.c[1] - R.c[1]) / R.scale;
+    const drift = Math.max(0, Math.max(shape, global) - 0.025);
+    let jerkV = 0;
+    if (this.prev && dt > 0) {
+      const sh = this.score(cur.pts, this.prev.pts, cur.c, this.prev.c, R.scale, 1) || 0;
+      const gl = Math.hypot(cur.c[0] - this.prev.c[0], cur.c[1] - this.prev.c[1]) / R.scale;
+      jerkV = Math.max(0, Math.max(sh, gl) * (1 / 15) / dt - 0.015);   // ramené à une image à 15 i/s
+    }
+    this.prev = cur;
+    return { drift, jerk: jerkV };
+  },
+};
+
+/* Image réduite en niveaux de gris, centrée (compense les variations de luminosité) */
+const IW = 64, IH = 48, icv = document.createElement("canvas"); icv.width = IW; icv.height = IH;
+const ictx = icv.getContext("2d", { willReadFrequently: true });
+function grabImage(){
+  const v = $("video"); if (!cam.on || v.readyState < 2) return null;
+  ictx.filter = "blur(1px)"; ictx.drawImage(v, 0, 0, IW, IH);
+  const d = ictx.getImageData(0, 0, IW, IH).data, g = new Float32Array(IW * IH); let m = 0;
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) { g[p] = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; m += g[p]; }
+  m /= g.length; for (let i = 0; i < g.length; i++) g[i] -= m;
+  return Array.from(g, x => Math.round(x));
+}
+
+/* Mesure brute de la posture selon la source (null si introuvable) */
+function measure(){
+  const s = $("source").value;
+  if (s === "pose") { curPose = Pose.detect($("video")); return curPose ? OneEuro.apply(curPose) : (OneEuro.reset(), null); }
+  if (s === "image") return grabImage();
+  if (s === "tilt") return Gyro.tilt();
+  if (s === "touch") return touchDev();
+  if (s === "squat") { const g = Gyro.tilt(); return g ? [...g, Sensors.baroLive ? Sensors.baro : 0] : null; }
+  return null;
+}
+function deviation(cur, r){
+  if ($("source").value === "touch") return cur;
+  if (!cur || !r) return null;
+  const s = $("source").value;
+  if (s === "image") { let d = 0; for (let i = 0; i < cur.length; i++) d += Math.abs(cur[i] - r[i]); return clamp(d / cur.length * 4, 0, 100); }
+  if (s === "tilt") { const c = clamp(cur[0] * r[0] + cur[1] * r[1] + cur[2] * r[2], -1, 1); return clamp(Math.acos(c) * 180 / Math.PI / 45 * 100, 0, 100); }
+  if (s === "squat") {
+    const c = clamp(cur[0] * r[0] + cur[1] * r[1] + cur[2] * r[2], -1, 1), ang = Math.acos(c) * 180 / Math.PI;
+    let dev = ang / Math.max(1, num("sqAng")) * 100;
+    if (cur[3] > 0 && r[3] > 0) { const up = (r[3] - cur[3]) * 8.3 * 100; dev = Math.max(dev, Math.max(0, up) / Math.max(1, num("sqH")) * 100); }   // 1 hPa ≈ 8,3 m
+    return clamp(dev, 0, 100);
+  }
+  return null;
+}
+const refOk = () => $("source").value === "touch" || !!(ref && ref.src === $("source").value && (ref.src !== "pose" || (Array.isArray(ref.data) && ref.data.length >= 29)));
+
+/* Enregistrement : compte à rebours, puis moyenne sur ~1 s pour lisser */
+function recordPose(delay){
+  if ($("source").value === "pose" && Pose.state !== "ready") { log("La reconnaissance de posture n'est pas prête (démarre la caméra)."); return false; }
+  if (($("source").value === "pose" || $("source").value === "image") && !cam.on) { log("Démarre d'abord la caméra."); return false; }
+  if (($("source").value === "tilt" || $("source").value === "squat") && !Gyro.live) { log("Active d'abord le gyroscope."); return false; }
+  if ($("source").value === "touch") return false;
+  if (!isPosture()) { log("Choisis une source « Posture »."); return false; }
+  recording = { until: Date.now() + delay * 1000, samples: [] };
+  $("recBox").classList.remove("hidden");
+  log(`📍 Enregistrement de la posture ${delay ? "dans " + delay + " s" : "maintenant"}…`);
+  if (delay) Speak.say("Prends la pose", "take", 2000);
+  return true;
+}
+function recordStep(raw){
+  if (!recording) return;
+  const t = Date.now(), left = Math.ceil((recording.until - t) / 1000);
+  if (left > 0) {
+    if ($("recBig").textContent !== String(left)) { $("recBig").textContent = left; beep(left <= 3 ? 880 : 660, 90); }
+    return;
+  }
+  $("recBig").textContent = "Ne bouge plus…";
+  if (raw) recording.samples.push(raw);
+  if (recording.samples.length < 10 && t - recording.until < 3000) return;
+  const S = recording.samples; recording = null; $("recBox").classList.add("hidden");
+  if (S.length < 3) { log("⚠ Posture introuvable pendant l'enregistrement : recommence (bien visible dans le cadre)."); beep(300, 300); Speak.say("Je ne te vois pas en entier"); return; }
+  // moyenne point par point
+  const avg = S[0].map((x, i) => Array.isArray(x) ? x.map((_, k) => S.reduce((a, s) => a + s[i][k], 0) / S.length) : S.reduce((a, s) => a + s[i], 0) / S.length);
+  if ($("source").value === "tilt" || $("source").value === "squat") { const n = Math.hypot(avg[0], avg[1], avg[2]); for (let i = 0; i < 3; i++) avg[i] /= n; }
+  if ($("source").value === "squat") log(avg[3] > 0 ? `Baromètre : ${avg[3].toFixed(2)} hPa enregistrés.` : "ℹ️ Pas de baromètre : seul l'angle de la cuisse est surveillé.");
+  ref = { src: $("source").value, data: avg, at: new Date().toISOString() };
+  store.set("keepPoseRef", ref);
+  stillTime = 0; movingSince = 0; PoseMetrics.reset(); wasStill = true;
+  log("✅ Posture enregistrée : c'est elle qu'il faut tenir."); beep(1100, 250, 2);
+  Speak.say(App.armed ? "Le temps a commencé. Garde ta position" : "Posture enregistrée");
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+$("recBtn").onclick = () => recordPose(num("recDelay"));
+
+function poseInfo(){
+  $("poseInfo").textContent = !isPosture() || $("source").value === "touch" ? "" : refOk() ? "✅ Posture enregistrée le " + new Date(ref.at).toLocaleString() : "Aucune posture enregistrée pour cette source.";
+  $("poseBanner").classList.toggle("hidden", !isPosture() && !App.armed);
+  $("poseBanner").textContent = defeat ? "❌ Échec : " + defeat
+    : goalDone && App.armed ? "🏆 Objectif atteint !"
+    : !isPosture() ? (motion < num("stillThr") ? "✅ Immobile" : "⚠️ Mouvement")
+    : $("source").value === "touch" ? (!Touch.started ? "👆 Pose ton doigt dans le cercle" : !Touch.down ? "⚠️ Doigt levé !" : motion < num("stillThr") ? "✅ Doigt ancré" : "⚠️ Doigt qui bouge")
+    : recording ? "⏳ Enregistrement…" : !refOk() ? "📍 Posture à enregistrer" : poseLost ? "❓ Posture introuvable" : motion < num("stillThr") ? "✅ Posture tenue" : "⚠️ Posture perdue";
+  $("motionLbl").textContent = isPosture() ? "Écart" : "Mouvement";
+}
+
+/* Squelette sur l'image : référence en pointillés blancs, actuel en vert (tenu) ou rouge (perdu) */
+function drawPose(){
+  const ov = $("poseOv"), x = ov.getContext("2d");
+  if (ov.width !== ov.clientWidth || ov.height !== ov.clientHeight) { ov.width = ov.clientWidth; ov.height = ov.clientHeight; }
+  x.clearRect(0, 0, ov.width, ov.height);
+  const W = ov.width, H = ov.height;
+  if (recording) {          // compte à rebours en grand sur l'image
+    const left = Math.ceil((recording.until - Date.now()) / 1000);
+    x.fillStyle = "#000a"; x.fillRect(0, H / 2 - 40, W, 80);
+    x.fillStyle = "#fff"; x.font = "bold 44px system-ui"; x.textAlign = "center"; x.textBaseline = "middle";
+    x.fillText(left > 0 ? String(left) : "Ne bouge plus…", W / 2, H / 2); x.textAlign = "start";
+  }
+  if ($("source").value !== "pose") return;
+  const skel = (P, col, dash) => {
+    x.strokeStyle = col; x.lineWidth = 3; x.setLineDash(dash);
+    for (const [a, b] of BONES) if (P[a][2] > 0.5 && P[b][2] > 0.5) { x.beginPath(); x.moveTo(P[a][0] * W, P[a][1] * H); x.lineTo(P[b][0] * W, P[b][1] * H); x.stroke(); }
+    x.setLineDash([]);
+  };
+  if (refOk()) skel(ref.data, "#ffffffaa", [6, 5]);
+  if (curPose) skel(curPose.map(p => [p.x, p.y, p.visibility ?? 1]), !refOk() ? "#4cc9f0" : motion < num("stillThr") ? "#52d273" : "#ff6b6b", []);
+}
+
+/* ====================================================================
+ * Paliers éditables
+ * ==================================================================== */
+const DEFAULTS = { vib: [[0, 10], [10, 25], [20, 45], [40, 70], [60, 100]], stim: [[20, 10], [35, 20], [55, 30]] };
+function makeTable(id, rows){ $(id).querySelector("tbody").innerHTML = ""; rows.forEach(([a, b]) => addRow(id, a, b)); }
+function addRow(id, a = 0, b = 0){
+  const tb = $(id).querySelector("tbody"), tr = document.createElement("tr");
+  tr.innerHTML = `<td><input type="number" min="0" value="${+a}"></td><td><input type="number" min="0" max="100" value="${+b}"></td><td><button>✕</button></td>`;
+  tr.querySelector("button").onclick = () => { tr.remove(); updateMarks(); };
+  tr.querySelectorAll("input").forEach(i => i.oninput = updateMarks);
+  tb.appendChild(tr); updateMarks();
+}
+function readTable(id){
+  return [...$(id).querySelectorAll("tbody tr")].map(tr => { const [a, b] = tr.querySelectorAll("input"); return [+a.value, clamp(+b.value, 0, 100)]; }).sort((x, y) => x[0] - y[0]);
+}
+$("addVib").onclick = () => addRow("vibTable", 0, 0);
+$("addStim").onclick = () => addRow("stimTable", 50, 10);
+function updateMarks(){
+  const m = $("motionMeter"); m.querySelectorAll(".mark").forEach(e => e.remove());
+  [num("stillThr"), ...readTable("stimTable").map(r => r[0])].forEach(x => { const s = document.createElement("div"); s.className = "mark"; s.style.left = clamp(x, 0, 100) + "%"; m.appendChild(s); });
+  const j = $("jerkMeter"); j.querySelectorAll(".mark").forEach(e => e.remove());
+  const k = document.createElement("div"); k.className = "mark"; k.style.left = "40%"; j.appendChild(k);    // seuil (barre pleine = 2,5 × seuil)
+  const p = $("tolPreset"); p.value = [...p.options].some(o => o.value === String(num("stillThr"))) ? String(num("stillThr")) : "";
+  const q = $("jerkPreset"); q.value = [...q.options].some(o => o.value === String(num("jerkThr"))) ? String(num("jerkThr")) : "";
+  $("sensSum").textContent = `tolérance ${num("stillThr")} %` + (hasJerk() ? ` · brusque ${num("jerkThr")} %` : "");
+}
+$("stillThr").oninput = updateMarks; $("jerkThr").oninput = updateMarks;
+$("tolPreset").onchange = () => { if ($("tolPreset").value && !$("stillThr").disabled) { $("stillThr").value = $("tolPreset").value; updateMarks(); } else updateMarks(); };
+$("jerkPreset").onchange = () => { if ($("jerkPreset").value) $("jerkThr").value = $("jerkPreset").value; updateMarks(); };
+$("randomGoal").onchange = () => $("goalMaxRow").classList.toggle("hidden", !$("randomGoal").checked);
+
+function vibForStill(t){
+  const rows = readTable("vibTable"), base = num("vibBase");
+  if (!rows.length) return base;
+  let lvl = base;
+  for (let i = 0; i < rows.length; i++) {
+    const [t0, v0] = rows[i];
+    if (t < t0) {
+      if ($("vibRamp").checked && i > 0) { const [tp, vp] = rows[i - 1]; return vp + (v0 - vp) * (t - tp) / Math.max(0.001, t0 - tp); }
+      return lvl;
+    }
+    lvl = Math.max(base, v0);
+  }
+  return lvl;
+}
+function stimForMotion(m){ let lvl = 0; for (const [thr, v] of readTable("stimTable")) if (m >= thr) lvl = v; return lvl; }
+
+/* ====================================================================
+ * Séance
+ * ==================================================================== */
+let wasStill = false, lossSince = 0, extraS = 0, goalDone = false, defeat = null;
+let stillTime = 0, timerT = 0, sessGoal = 0, goalHidden = false, movingSince = 0, lastPulseEnd = 0, pulseOffTimer = null;
+let pulseCount = 0, recentPulses = [], armedAt = 0, curVib = 0, curStim = 0;
+let viol = { n: 0, last: 0, counts: {} }, driftAcc = 0, jerkSince = 0, lostSince = 0, faceSince = 0, lastAnn = null;
+let rep = null;          // données du rapport de séance
+const VTYPES = {
+  drift: ["écart de posture", "Tu as changé de pose"],
+  move:  ["mouvement", "Tu as bougé"],
+  jerk:  ["mouvement brusque", "Tu as bougé"],
+  lost:  ["sortie du cadre", "Je ne te vois plus"],
+  face:  ["orientation du visage", ""],
+};
+
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) {
+    armedAt = Date.now(); stillTime = 0; timerT = 0; pulseCount = 0; recentPulses = []; movingSince = 0; wasStill = false; lossSince = 0;
+    extraS = 0; goalDone = false; defeat = null; viol = { n: 0, last: 0, counts: {} }; driftAcc = 0; jerkSince = 0; lostSince = 0; faceSince = 0; lastAnn = null;
+    Game.start();
+    // durée : fixe (ou carrière) ou aléatoire cachée
+    const base = num("holdGoal"), mx = num("goalMax");
+    goalHidden = !Game.run && $("randomGoal").checked && mx > base;
+    sessGoal = goalHidden ? Math.round((base + Math.random() * (mx - base)) / 5) * 5 : base;
+    rep = { t0: armedAt, goal0: Game.run ? Game.target("goal") : sessGoal, hist: [], viol: [], src: $("source").value, type: $("goalType").value };
+    log("Session armée." + (goalHidden ? " Durée tirée au hasard, révélée à la fin." : ""));
+    Touch.started = Touch.down; trem = 0;
+    if (isPosture() && $("source").value !== "touch" && $("autoRec").checked) { if (!recordPose(num("recDelay") || 5)) Speak.say("Prends la pose"); }
+    else Speak.say(isPosture() && refOk() ? "Le temps a commencé. Garde ta position" : "C'est parti");
+  } else {
+    Sched.cancel(pulseOffTimer); curStim = 0; curVib = 0; sendLevel("vib", 0, true); sendLevel("stim", 0, true);
+    recording = null; $("recBox").classList.add("hidden");
+    if (rep && !rep.result) finishReport(goalDone ? "ok" : defeat ? "fail" : "stop");
+    Game.end();
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT D'URGENCE"); }
+
+function firePulse(level){
+  const dur = clamp(num("pulseMs"), 100, 3000);
+  curStim = sendLevel("stim", level, true);
+  pulseCount++; recentPulses.push(Date.now());
+  log(`Shock ${curStim.toFixed(0)} % pendant ${dur} ms`);
+  Sched.cancel(pulseOffTimer);
+  pulseOffTimer = Sched.after(dur, () => { curStim = sendLevel("stim", 0, true); lastPulseEnd = Date.now(); });
+  lastPulseEnd = Date.now() + dur;
+}
+function escalatedShock(base){
+  const t = Date.now(), win = num("escWindow") * 1000;
+  recentPulses = recentPulses.filter(x => t - x < win);
+  return base + recentPulses.length * num("escStep");
+}
+
+/* Objectif : base + pénalités + temps ajouté par le partenaire */
+const goalTarget = () => (App.armed ? sessGoal : num("holdGoal")) > 0 ? (App.armed ? sessGoal : num("holdGoal")) + extraS : 0;
+const progressVal = () => $("goalType").value === "timer" ? timerT : stillTime;
+function addTime(sec, why){
+  sec = Math.round(+sec || 0); if (sec <= 0 || !App.armed) return;
+  extraS += sec; Game.addGoal(sec);
+  log(`⏱️ +${sec} s (${why}) — objectif ${goalHidden ? "caché" : (goalTarget() || Game.target("goal")) + " s"}.`);
+  beep(330, 160); Speak.say(`Plus ${sec} secondes`, "add", 1500);
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+function goalReached(){
+  if (goalDone) return; goalDone = true;
+  if (rep) rep.okAt = Date.now();
+  if (!Game.run || Game.run.reached) {
+    const g = Game.run ? Game.target("goal") : goalTarget();
+    toast("🏆 Victoire !", `${g} s ${$("goalType").value === "timer" ? "en pose" : "de posture tenue"}`, "var(--ok)");
+    log(`🏆 Objectif atteint : ${g} s.`); beep(1320, 120, 3);
+    if (!Game.run) Speak.say("Victoire ! Le temps est écoulé");
+  }
+  if ($("onGoal").value === "stop") Sched.after(1500, () => { if (App.armed) { log("Séance arrêtée : objectif atteint."); setArmed(false); } });
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+function lose(why){
+  if (defeat || goalDone) return;
+  defeat = why; log("❌ Échec : " + why); Speak.say("Échec. Tu n'as pas réussi"); beep(220, 500);
+  Sched.after(1200, () => { if (App.armed) setArmed(false); });
+}
+
+/* Une infraction : vie (carrière), pénalité croissante, shock, voix, échec au-delà du maximum */
+function violation(type){
+  const t = Date.now();
+  if (!App.armed || goalDone || defeat || t - viol.last < num("minGap") * 1000) return;
+  viol.last = t; viol.n++; viol.counts[type] = (viol.counts[type] || 0) + 1;
+  if (rep) rep.viol.push([t - rep.t0, type]);
+  const [label, say] = type === "jerk" && $("source").value === "squat" ? ["tremblements", "Tes jambes tremblent"] : VTYPES[type];
+  log(`🚫 Infraction ${viol.n} : ${label}.`); beep(330, 200);
+  const sayFace = type === "face" ? ($("faceMode").value === "to" ? "Regarde la caméra" : "Tu as regardé la caméra") : say;
+  const pen = num("penaltyS") > 0 || num("penaltyInc") > 0 ? num("penaltyS") + (viol.n - 1) * num("penaltyInc") : 0;
+  if (!pen) Speak.say(sayFace, "viol", 2500);
+  if (pen > 0) { Speak.say(sayFace, "viol", 2500); addTime(pen, "pénalité : " + label); }
+  if (Equip.stim && $("shockOnViol").checked && curStim === 0 && t - lastPulseEnd >= Math.max(1000, num("cooldown"))) {
+    const rows = readTable("stimTable"), lvl = escalatedShock(Math.max(stimForMotion(motion), rows.length ? rows[0][1] : 10));
+    if (lvl > 0) { firePulse(lvl); movingSince = 0; }
+  }
+  const had = !!Game.run;
+  if (had) { Game.loseLife(); if (!Game.run) return lose("plus de vies"); }
+  else if (num("maxViol") > 0 && viol.n >= num("maxViol")) return lose(`${viol.n} infractions`);
+  if (typeof Partner !== "undefined") Partner.send(true);
+}
+
+/* Annonces vocales du temps restant (minuteur ou tenue) */
+function announce(){
+  const tg = Game.run ? Game.target("goal") : goalTarget();
+  if (!tg || goalHidden || goalDone) return;
+  const left = Math.ceil(tg - progressVal());
+  const marks = [600, 300, 240, 180, 120, 60, 30, 10];
+  const m = marks.find(x => left <= x && left > x - 2);
+  if (m && lastAnn !== m) {
+    lastAnn = m;
+    Speak.say(m >= 60 ? `Encore ${m / 60} minute${m >= 120 ? "s" : ""}` : `Encore ${m} secondes`, "left", 1500);
+  }
+}
+
+/* Rapport de séance */
+function finishReport(result){
+  rep.result = result; rep.t1 = Date.now();
+  rep.goal = Game.run ? Game.target("goal") : goalTarget(); rep.extra = extraS; rep.prog = progressVal(); rep.counts = { ...viol.counts }; rep.n = viol.n; rep.shocks = pulseCount;
+  rep.why = defeat;
+  const sec = $("secReport"); sec.classList.remove("hidden"); sec.open = true;
+  const T = { ok: "🏆 Victoire", fail: "❌ Échec", stop: "⏹️ Séance interrompue" };
+  $("repTitle").textContent = T[result] + (rep.why ? " — " + rep.why : "");
+  const fm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+  const cnt = Object.entries(rep.counts).map(([k, v]) => `${VTYPES[k][0]} ×${v}`).join(", ") || "aucune";
+  $("repGrid").innerHTML = [
+    ["Durée prévue", rep.goal0 ? fm(rep.goal0) + (rep.goal0 && rep.goal !== rep.goal0 ? ` → ${fm(rep.goal)}` : "") : "—"],
+    ["Durée réelle", fm((rep.t1 - rep.t0) / 1000)],
+    [rep.type === "timer" ? "Temps en pose" : "Tenue", fm(rep.prog)],
+    ["Temps ajouté", "+" + rep.extra + " s"],
+    ["Infractions", rep.n + (rep.n ? ` (${cnt})` : "")],
+    ["Shocks", rep.shocks],
+  ].map(([a, b]) => `<span class="muted">${a}</span><b>${b}</b>`).join("");
+  drawReport();
+}
+function drawReport(){
+  const cv = $("repChart"), x = cv.getContext("2d"), W = cv.width, H = cv.height;
+  x.clearRect(0, 0, W, H);
+  if (!rep || !rep.hist.length) return;
+  const T = Math.max(1, (rep.t1 || Date.now()) - rep.t0), X = t => t / T * (W - 10) + 5;
+  const maxY = Math.max(40, num("stillThr") * 2, ...rep.hist.map(h => h[1])), Y = v => H - 8 - v / maxY * (H - 16);
+  x.setLineDash([5, 4]); x.lineWidth = 1;
+  x.strokeStyle = "#c77dff88"; x.beginPath(); x.moveTo(0, Y(num("stillThr"))); x.lineTo(W, Y(num("stillThr"))); x.stroke();
+  x.strokeStyle = "#ffb70388"; x.beginPath(); x.moveTo(0, Y(num("jerkThr"))); x.lineTo(W, Y(num("jerkThr"))); x.stroke();
+  x.setLineDash([]);
+  const line = (k, col) => { x.strokeStyle = col; x.lineWidth = 2; x.beginPath(); let st = false;
+    for (const h of rep.hist) { if (h[k] == null) { st = false; continue; } const px = X(h[0]), py = Y(Math.min(maxY, h[k])); st ? x.lineTo(px, py) : x.moveTo(px, py); st = true; } x.stroke(); };
+  line(1, "#c77dff"); line(2, "#ffb703");
+  x.strokeStyle = "#ff6b6b"; x.lineWidth = 2;
+  for (const [t] of rep.viol) { x.beginPath(); x.moveTo(X(t), 0); x.lineTo(X(t), H); x.stroke(); }
+  if (rep.okAt) { x.strokeStyle = "#52d273"; x.beginPath(); x.moveTo(X(rep.okAt - rep.t0), 0); x.lineTo(X(rep.okAt - rep.t0), H); x.stroke(); }
+}
+
+/* ====================================================================
+ * Moteur (100 ms)
+ * ==================================================================== */
+let lastTick = performance.now(), lastHist = 0;
+function tick(){
+  const now = performance.now(), dt = Math.min(0.5, (now - lastTick) / 1000); lastTick = now;
+  sampleMotion(dt);
+  const a = num("smooth") / 100;
+  motion = a * motion + (1 - a) * rawMotion;
+
+  const stillThr = num("stillThr"), jThr = num("jerkThr") / 100;
+  const stimRows = readTable("stimTable");
+  const moveThr = stimRows.length ? Math.max(stimRows[0][0], stillThr) : Infinity;   // jamais de shock dans la tolérance
+  // posture : pas de référence ou posture introuvable → ni récompense ni shock
+  const noRef = isPosture() && !refOk();
+  const unknown = noRef || (isPosture() && poseLost) || !!recording;
+  const jerking = hasJerk() && !unknown && jerk > jThr;
+  const isStill = !unknown && motion < stillThr && !jerking, isMoving = !unknown && motion >= moveThr;
+
+  if (App.armed && !App.suspended && !defeat) {
+    const t = Date.now();
+    // --- infractions
+    if (!unknown) {
+      if (hasJerk()) {
+        // écart cumulé (avec hystérésis et décroissance) au-delà du délai « écart soutenu »
+        if (motion > stillThr) driftAcc += dt * 1000;
+        else if (motion < stillThr * 0.85) driftAcc = 0;
+        else driftAcc = Math.max(0, driftAcc - dt * 500);
+        if (driftAcc > Math.max(150, num("moveHold"))) { driftAcc = 0; violation("drift"); }
+        // mouvement brusque : immédiat au-delà de 2,5 × le seuil, sinon après 0,9 s
+        if (jerk >= jThr * 2.5) { jerkSince = 0; violation("jerk"); }
+        else if (jerk > jThr) { if (!jerkSince) jerkSince = t; else if (t - jerkSince > 900) { jerkSince = 0; violation("jerk"); } }
+        else jerkSince = 0;
+      } else {
+        // autres sources : posture perdue quand l'écart dure plus que le délai
+        if (isStill) { wasStill = true; lossSince = 0; }
+        else if (wasStill) {
+          if (!lossSince) lossSince = t;
+          if (t - lossSince >= Math.max(150, num("moveHold"))) { wasStill = false; lossSince = 0; violation(isPosture() ? "drift" : "move"); }
+        }
+      }
+      lostSince = 0;
+    } else { lossSince = 0; driftAcc = 0; }
+    // sortie du cadre
+    if (isPosture() && refOk() && poseLost && !recording && $("lostIsMove").checked) {
+      if (!lostSince) lostSince = t; else if (t - lostSince > 1500) { lostSince = t; violation("lost"); }
+    }
+    // orientation du visage (points du visage du squelette)
+    const fm = $("faceMode").value;
+    if (isAIPose() && fm !== "none" && !unknown && faceScore != null) {
+      const fail = fm === "to" ? faceScore < 0.5 : faceScore > 0.65;
+      if (!fail) faceSince = 0; else if (!faceSince) faceSince = t; else if (t - faceSince > 1000) { faceSince = 0; violation("face"); }
+    } else faceSince = 0;
+
+    // --- tenue, minuteur, vibration
+    if (isStill && Game.run) Game.xp(dt);
+    const vm = $("vibOnMove").value, pausing = vm === "pause" || vm === "pauseoff";
+    if (isStill) stillTime += dt;
+    else if (!pausing && !unknown) stillTime = 0;
+    if (!unknown && !recording) timerT += dt;
+    let targetVib = vibForStill(stillTime);
+    if (!isStill && (vm === "off" || vm === "pauseoff")) targetVib = 0;
+    if (unknown) targetVib = 0;                     // posture inconnue : pas de récompense
+    curVib = sendLevel("vib", targetVib);
+    if (Game.run) { Game.progress(progressVal()); if (Game.run && Game.run.reached) goalReached(); }
+    else if (goalTarget() > 0 && progressVal() >= goalTarget()) goalReached();
+    announce();
+
+    // --- shock tant que l'écart reste au-dessus d'un palier
+    if (isMoving) { if (!movingSince) movingSince = t; } else movingSince = 0;
+    const cd = Math.max(1000, num("cooldown"));
+    if (Equip.stim && movingSince && t - movingSince >= num("moveHold") && t - lastPulseEnd >= cd && curStim === 0) {
+      const lvl = escalatedShock(stimForMotion(motion));
+      if (lvl > 0) { firePulse(lvl); movingSince = 0; }
+    }
+    if (rep && t - lastHist >= 500) { lastHist = t; rep.hist.push([t - rep.t0, unknown ? null : +motion.toFixed(1), unknown || !hasJerk() ? null : +(jerk * 100).toFixed(1)]); }
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+
+  $("motionBar").style.width = motion + "%"; $("motionVal").textContent = unknown && isPosture() ? "—" : motion.toFixed(0);
+  $("jerkBar").style.width = clamp(jerk / Math.max(0.001, jThr * 2.5) * 100, 0, 100) + "%";
+  $("jerkVal").textContent = $("source").value === "squat" ? trem.toFixed(2) : unknown ? "—" : (jerk * 100).toFixed(1);
+  $("jerkRow").querySelector("span").textContent = $("source").value === "squat" ? "Tremble" : "Brusque";
+  if ($("source").value === "squat") $("sqInfo").textContent = `Avec la tolérance à ${num("stillThr")} %, cela laisse environ ${Math.round(num("sqAng") * num("stillThr") / 100)}° et ${Math.round(num("sqH") * num("stillThr") / 100)} cm. Baromètre : ${Sensors.baroLive ? Sensors.baro.toFixed(2) + " hPa" : "absent ou inactif"}.`;
+  drawTouch();
+  poseInfo(); drawPose();
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimBar").style.width = curStim + "%"; $("stimVal").textContent = curStim.toFixed(0);
+  $("progLbl").textContent = $("goalType").value === "timer" ? "En pose" : "Tenue";
+  $("stillT").textContent = progressVal().toFixed(1); $("pulseN").textContent = pulseCount;
+  $("violN").textContent = viol.n;
+  const vmax = Game.run ? Game.run.p.lives + 1 : num("maxViol");
+  $("violMax").textContent = vmax > 0 ? " / " + vmax : "";
+  const gt = Game.run ? Game.target("goal") : goalTarget();
+  $("goalT").textContent = goalHidden && App.armed && !goalDone ? " / ??" + (extraS ? ` (+${extraS})` : "") : gt > 0 ? ` / ${gt}` + (extraS ? ` (+${extraS})` : "") : "";
+  $("goalSum").textContent = (gt > 0 ? (goalHidden && App.armed ? "??" : gt + " s") + (extraS ? ` dont +${extraS} s` : "") : "") + ($("goalType").value === "timer" ? " · minuteur" : "");
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0;
+  $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+
+/* ====================================================================
+ * Initialisation
+ * ==================================================================== */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Keep Pose", roleLabels: { vib: "Vibration (immobilité)", stim: "Shock (posture perdue)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la session pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", curVib, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la session pour tester."); firePulse(stimForMotion(100) || 10); };
+
+const KEY = "motionControlCfg";
+const FIELDS = ["source","facing","poseModel","faceMode","touchR","sqAng","sqH","sqTrem","pixThr","camMax","accMax","rotMax","smooth","stillThr","jerkThr","wristW","goalType","holdGoal","goalMax","penaltyS","penaltyInc","minGap","maxViol","onGoal",
+  "vibBase","vibOnMove","moveHold","pulseMs","cooldown","escStep","escWindow","maxVib","maxStim","sessionMax","recDelay"];
+const CHECKS = ["vibRamp", "voice", "autoRec", "lostIsMove", "randomGoal", "shockOnViol", "touchFull"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS, { vib: readTable("vibTable"), stim: readTable("stimTable") });
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+const c = Cfg.load(KEY, FIELDS, CHECKS);
+makeTable("vibTable", (c && c.vib) || DEFAULTS.vib); makeTable("stimTable", (c && c.stim) || DEFAULTS.stim);
+applyEquip(); updateSourceUI(); updateMarks(); $("randomGoal").onchange();
+/* Carrière : tolérance, délai, durée et pénalité suivent le niveau */
+Game.init("motion", {
+  apply: (p, on) => {
+    ["stillThr", "moveHold", "holdGoal", "penaltyS", "tolPreset", "randomGoal", "maxViol"].forEach(id => { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; });
+    if (on) { $("stillThr").value = p.tol; $("moveHold").value = p.grace; $("holdGoal").value = p.goal; $("penaltyS").value = p.penalty; updateMarks(); }
+  },
+});
+/* Aperçu et contrôle pour la télécommande */
+Partner.init("motion", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: isPosture() ? "Écart" : "Mouvement", v: Math.round(motion), max: 100, unit: isPosture() ? " %" : "" },
+    phase: $("poseBanner").textContent + (App.armed && !unknownNow() ? " · " + progressVal().toFixed(0) + " s" : ""),
+    chips: [["Tolérance", num("stillThr") + " %"],
+      [$("goalType").value === "timer" ? "En pose" : "Tenue", progressVal().toFixed(0) + (Game.run ? " / " + Game.target("goal") : goalTarget() ? " / " + (goalHidden && !goalDone ? "??" : goalTarget()) : "") + " s"],
+      ["Infractions", viol.n], ...(hasJerk() ? [["Brusque", (jerk * 100).toFixed(1)]] : []),
+      ...(extraS ? [["Temps ajouté", "+" + extraS + " s"]] : []), ...(Equip.stim ? [["Shocks", pulseCount]] : [])],
+  }),
+  actions: () => [
+    ...(isPosture() ? [{ id: "rec5", label: "📍 Enregistrer la posture (5 s)" }] : []),
+    ...(!App.armed ? [] : [
+      { id: "add10", label: "⏱️ +10 s à tenir" }, { id: "add30", label: "⏱️ +30 s à tenir" }, { id: "add60", label: "⏱️ +60 s à tenir" },
+      { id: "still10", label: "⏩ +10 s (aide)" }, { id: "still0", label: "↩️ Compteur à zéro" },
+      { id: "tolMinus", label: "🎯 Tolérance −2 %" }, { id: "tolPlus", label: "🎯 Tolérance +2 %" },
+      ...(Partner.can.stim ? [{ id: "pulse", label: "⚡ Shock (palier max)" }] : []),
+    ]),
+  ],
+  doAction: id => {
+    if (id === "rec5") { log("🎮 Le partenaire lance l'enregistrement de la posture."); recordPose(5); return; }
+    if (!App.armed) return;
+    if (id === "add10" || id === "add30" || id === "add60") addTime(+id.slice(3), "ajouté par le partenaire");
+    else if (id === "still10") { if ($("goalType").value === "timer") timerT += 10; else stillTime += 10; log("🎮 +10 s (aide du partenaire)."); }
+    else if (id === "still0") { stillTime = 0; timerT = 0; log("🎮 Compteur remis à zéro."); }
+    else if (id === "tolMinus" || id === "tolPlus") { $("stillThr").value = clamp(num("stillThr") + (id === "tolPlus" ? 2 : -2), 0, 100); updateMarks(); log("🎮 Tolérance → " + num("stillThr") + " %"); }
+    else if (id === "pulse" && Partner.can.stim && curStim === 0) firePulse(stimForMotion(100) || 10);
+  },
+});
+function unknownNow(){ return (isPosture() && (!refOk() || poseLost)) || !!recording; }
+setInterval(tick, 100);
+log("Prêt. Démarre la caméra (ou le gyroscope), puis « Armer » : la posture est enregistrée au départ (départ guidé).");
+</script>
+</body>
+</html>

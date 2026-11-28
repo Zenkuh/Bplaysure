@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Denial Control</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .s-BUILD{color:var(--vib)} .s-DENY{color:var(--stim)} .s-FINAL{color:var(--ok)} .s-IDLE,.s-DONE{color:var(--mute)}
+  video{max-height:180px}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Denial</h1>
+    <span id="hrState" class="pill" data-need="hr">❤️ —</span>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner s-IDLE" id="stateBig">En attente</div>
+    <div class="stat"><span>Excitation</span><div class="meter" id="arMeter"><div id="arBar" class="accC"></div></div><span id="arVal">0</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <canvas id="spark" class="spark" width="600" height="80"></canvas>
+    <div class="chips">
+      <span>Edges <b id="edgeN">0</b>/<b id="edgeTarget">0</b></span>
+      <span data-need="hr">Cardio <b id="hrVal">—</b> (repos <b id="baseVal">—</b>)</span>
+      <span data-any="cam gyro">Agitation <b id="agiVal">—</b></span>
+      <span>Temps <b id="sessT">0:00</b></span>
+    </div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secSensors" open>
+    <summary>📡 Détection de l'approche</summary>
+    <div class="body">
+      <div data-need="hr">
+        <div class="row"><button id="hrBtn">Connecter la ceinture</button><button id="calibBtn">Calibrer le repos (60 s)</button></div>
+        <label class="f"><span>Seuil d'edge = repos + (bpm)</span><input id="hrDelta" type="number" min="5" max="100" value="30"></label>
+        <label class="f"><span>Poids du cardio</span><input id="wHr" type="number" min="0" max="10" value="6"></label>
+      </div>
+      <div data-need="cam">
+        <div class="row">
+          <select id="facing"><option value="user">Caméra avant</option><option value="environment">Caméra arrière</option></select>
+          <button id="camBtn">Démarrer la caméra</button>
+        </div>
+        <video id="video" autoplay playsinline muted></video>
+        <label class="f"><span>Caméra : % d'image en mouvement = 100</span><input id="motMax" type="number" min="1" max="100" value="25"></label>
+      </div>
+      <div data-need="gyro">
+        <div class="row"><button id="gyroBtn">Activer le gyroscope</button></div>
+        <label class="f"><span>Gyro : accélération = 100 (m/s²)</span><input id="accMax" type="number" min="0.1" max="20" step="0.1" value="2.5"></label>
+        <label class="f" id="rotRow"><span>Gyro : rotation = 100 (°/s)</span><input id="rotMax" type="number" min="5" max="720" step="5" value="90"></label>
+      </div>
+      <label class="f" data-any="cam gyro"><span>Poids de l'agitation</span><input id="wMot" type="number" min="0" max="10" value="2"></label>
+      <label class="f"><span>Simulation (test)</span><input id="simOn" type="checkbox"></label>
+      <label class="f"><span>Excitation simulée</span><input id="simVal" type="range" min="0" max="100" value="0"></label>
+      <p class="muted" id="lockInfo"></p>
+      <p class="muted">Le bouton « PROCHE ! » en bas (ou la touche E) déclenche toujours un edge : c'est le signal le plus fiable.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secThr">
+    <summary>🎯 Seuils</summary>
+    <div class="body">
+      <label class="f"><span>Seuil d'edge (excitation %)</span><input id="edgeThr" type="number" min="10" max="100" value="85"></label>
+      <label class="f"><span>Anticipation (s)</span><input id="anticip" type="number" min="0" max="20" step="0.5" value="4"></label>
+      <label class="f"><span>Reprise quand excitation ≤ (%)</span><input id="resumeThr" type="number" min="0" max="100" value="45"></label>
+      <label class="f"><span>Pause minimale après un edge (s)</span><input id="restMin" type="number" min="5" max="600" value="30"></label>
+      <label class="f"><span>Lissage</span><input id="smooth" type="range" min="0" max="95" value="70"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secVib" data-need="vib">
+    <summary>〰️ Montée (vibration)</summary>
+    <div class="body">
+      <label class="f"><span>Vibration de départ (%)</span><input id="vibStart" type="number" min="0" max="100" value="20"></label>
+      <label class="f"><span>Vibration max (%)</span><input id="vibMax" type="number" min="0" max="100" value="80"></label>
+      <label class="f"><span>Durée de la montée (s)</span><input id="rampS" type="number" min="5" max="1200" value="120"></label>
+      <label class="f"><span>+ % de départ à chaque edge</span><input id="rampBoost" type="number" min="0" max="30" value="5"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secEdge">
+    <summary>✋ Action à l'edge</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Couper la vibration</span><input id="cutVib" type="checkbox" checked></label>
+      <div data-need="stim">
+        <label class="f"><span>Envoyer un shock</span><input id="stimOn" type="checkbox" checked></label>
+        <label class="f"><span>Intensité shock (%)</span><input id="stimLvl" type="number" min="0" max="100" value="15"></label>
+        <label class="f"><span>Nombre d'impulsions</span><input id="pulseN" type="number" min="1" max="10" value="2"></label>
+        <label class="f"><span>Durée d'une impulsion (ms)</span><input id="pulseMs" type="number" min="100" max="3000" step="50" value="700"></label>
+        <label class="f"><span>Intervalle entre impulsions (ms)</span><input id="pulseGap" type="number" min="300" max="10000" step="100" value="1200"></label>
+        <label class="f"><span>Escalade (+% par edge)</span><input id="stimEsc" type="number" min="0" max="20" value="2"></label>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secProgram">
+    <summary>🏁 Programme</summary>
+    <div class="body">
+      <label class="f"><span>Edges avant la fin</span><input id="edgeGoal" type="number" min="1" max="100" value="5"></label>
+      <label class="f"><span>Durée max (min)</span><input id="sessionMax" type="number" min="1" max="240" value="45"></label>
+      <label class="f"><span>À la fin</span>
+        <select id="finale">
+          <option value="allow">Autoriser</option>
+          <option value="deny">Refuser</option>
+          <option value="random">Au hasard</option>
+        </select>
+      </label>
+      <label class="f"><span>Chance d'autorisation si hasard (%)</span><input id="allowPct" type="number" min="0" max="100" value="50"></label>
+      <div data-need="vib">
+        <label class="f"><span>Vibration finale si autorisé (%)</span><input id="finalVib" type="number" min="0" max="100" value="100"></label>
+        <label class="f"><span>Durée finale (s)</span><input id="finalS" type="number" min="10" max="600" value="90"></label>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="closeBtn">PROCHE !</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script>
+"use strict";
+/* ====================================================================
+ * Cardio
+ * ==================================================================== */
+let baseline = null, calibrating = null;
+HR.onStatus = txt => { $("hrState").textContent = "❤️ " + txt; };
+HR.onBpm = bpm => { if (calibrating) calibrating.push(bpm); };
+$("hrBtn").onclick = async () => { try { await HR.connect(); } catch (e) { log("Cardio : " + e.message); } };
+$("calibBtn").onclick = () => {
+  if (!HR.live) return log("Connecte d'abord le capteur cardio.");
+  calibrating = []; log("Calibration du repos : reste détendu·e pendant 60 s…");
+  setTimeout(() => {
+    if (calibrating && calibrating.length) { const s = [...calibrating].sort((a, b) => a - b); baseline = s[Math.floor(s.length / 2)]; log("Fréquence de repos : " + baseline + " bpm"); }
+    calibrating = null;
+  }, 60000);
+};
+
+/* ====================================================================
+ * Agitation : caméra + gyroscope
+ * ==================================================================== */
+const cam = new CamMotion($("video"));
+let camMotion = 0, agitation = null;
+$("camBtn").onclick = async () => {
+  if (cam.on) { cam.stop(); $("camBtn").textContent = "Démarrer la caméra"; updateBg(); return; }
+  try { await cam.start($("facing").value); $("camBtn").textContent = "Arrêter la caméra"; log("Caméra démarrée : la session s'arrêtera si l'écran se verrouille."); }
+  catch (e) { log("Caméra : " + e.message); }
+  updateBg();
+};
+$("facing").onchange = () => { if (cam.on) { cam.stop(); $("camBtn").onclick(); } };
+$("gyroBtn").onclick = async () => {
+  if (Sensors.native) {                       // APK : capteur natif, fonctionne écran verrouillé
+    nativeGyro = !nativeGyro;
+    Sensors.start({ accel: nativeGyro, gps: false, mic: false });
+    $("gyroBtn").textContent = nativeGyro ? "Désactiver le gyroscope" : "Activer le gyroscope";
+    log(nativeGyro ? "Gyroscope activé (fonctionne écran verrouillé)." : "Gyroscope désactivé.");
+    return;
+  }
+  if (Gyro.on) { Gyro.stop(); $("gyroBtn").textContent = "Activer le gyroscope"; return; }
+  try { await Gyro.start(); $("gyroBtn").textContent = "Désactiver le gyroscope"; log("Gyroscope activé."); }
+  catch (e) { log(e.message); }
+};
+function sampleAgitation(){
+  const vals = [];
+  const m = cam.sample(25);
+  if (m != null) { camMotion = 0.8 * camMotion + 0.2 * m; vals.push(clamp(camMotion / Math.max(1, num("motMax")) * 100, 0, 100)); }
+  const g = Sensors.native ? (nativeGyro && Sensors.accLive ? clamp(Sensors.acc / Math.max(0.05, num("accMax")) * 100, 0, 100) : null)
+                            : Gyro.sample(num("accMax"), num("rotMax"));
+  if (g != null) vals.push(g);
+  return vals.length ? Math.max(...vals) : null;
+}
+
+/* ====================================================================
+ * Estimation de l'excitation (0–100) + pente
+ * ==================================================================== */
+let arousal = 0, closePressed = false;
+const history = [];
+function estimateArousal(){
+  agitation = sampleAgitation();
+  if ($("simOn").checked) return num("simVal");
+  let sum = 0, w = 0;
+  if (HR.live && baseline != null) { const s = clamp((HR.bpm - baseline) / num("hrDelta") * 100, 0, 100); sum += s * num("wHr"); w += num("wHr"); }
+  if (agitation != null) { sum += agitation * num("wMot"); w += num("wMot"); }
+  return w ? sum / w : null;
+}
+function slopePerSec(){
+  const now = Date.now(), pts = history.filter(p => now - p.t < 5000);
+  if (pts.length < 5) return 0;
+  const n = pts.length, mt = pts.reduce((s, p) => s + p.t, 0) / n, ma = pts.reduce((s, p) => s + p.a, 0) / n;
+  let nu = 0, de = 0; for (const p of pts) { nu += (p.t - mt) * (p.a - ma); de += (p.t - mt) ** 2; }
+  return de ? nu / de * 1000 : 0;
+}
+
+/* ====================================================================
+ * Machine à états : IDLE → BUILD ⇄ DENY → FINAL → DONE
+ * ==================================================================== */
+let state = "IDLE", stateSince = 0, armedAt = 0, edges = 0, curVib = 0, curStim = 0, finalAllow = null, buildStart = 0;
+let pulseTimers = [];
+const LABELS = { IDLE: "En attente", BUILD: "Montée", DENY: "Denial — on redescend", FINAL: "Fin", DONE: "Terminé" };
+
+function setState(s){
+  state = s; stateSince = Date.now();
+  if (s === "BUILD") buildStart = Date.now();
+  let label = LABELS[s];
+  if (s === "FINAL") label = finalAllow ? "Autorisé·e 💜" : "Refusé·e";
+  $("stateBig").textContent = label; $("stateBig").className = "banner s-" + s;
+}
+function clearPulses(){ pulseTimers.forEach(o => Sched.cancel(o)); pulseTimers = []; curStim = sendLevel("stim", 0, true); }
+
+/* Écran verrouillé : autorisé tant que la caméra n'est pas utilisée (cardio, gyroscope, télécommande) */
+let nativeGyro = false;
+function updateBg(){
+  const ok = !cam.on;
+  App.allowBackground = ok; App.syncBg();
+  $("lockInfo").textContent = ok ? "🔒 Continue écran verrouillé (caméra non utilisée)." : "📷 Caméra active : la session s'arrête si l'écran se verrouille.";
+  if (ok && App.armed && Sensors.native && !Sensors.running) Sensors.start({ accel: nativeGyro, gps: false, mic: false });   // garde l'app éveillée
+}
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  if (on) updateBg();
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  clearPulses();
+  if (on) {
+    if (baseline == null && HR.live) log("⚠ Pas de calibration : le cardio est ignoré tant que le repos n'est pas calibré.");
+    armedAt = Date.now(); edges = 0; finalAllow = null; setState("BUILD"); log("Session armée.");
+  } else { curVib = sendLevel("vib", 0, true); setState("IDLE"); }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT D'URGENCE"); }
+
+function onEdge(reason, stimAllowed = true){
+  edges++;
+  log(`Edge n°${edges} (${reason})`);
+  if ($("cutVib").checked) curVib = sendLevel("vib", 0, true);
+  if (stimAllowed && Equip.stim && $("stimOn").checked) {
+    const lvl = num("stimLvl") + (edges - 1) * num("stimEsc");
+    const dur = clamp(num("pulseMs"), 100, 3000), gap = Math.max(300, num("pulseGap"));
+    const n = clamp(num("pulseN"), 1, 10);
+    for (let i = 0; i < n; i++) {
+      const t0 = i * (dur + gap);
+      pulseTimers.push(Sched.after(t0, () => { if (App.armed) curStim = sendLevel("stim", lvl, true); }));
+      pulseTimers.push(Sched.after(t0 + dur, () => { curStim = sendLevel("stim", 0, true); }));
+    }
+    log(`Shock : ${n} × ${dur} ms à ${Math.min(lvl, num("maxStim"))} %`);
+  }
+  setState("DENY");
+}
+function goFinal(force){
+  const f = $("finale").value;
+  finalAllow = force !== undefined ? force : f === "allow" ? true : f === "deny" ? false : Math.random() * 100 < num("allowPct");
+  log("Fin du programme : " + (finalAllow ? "orgasme autorisé" : "refusé"));
+  clearPulses(); setState("FINAL");
+}
+
+let lastTickAt = 0;
+function tick(){
+  const now = Date.now();
+  if (now - lastTickAt < 80) return;          // minuterie + réveil natif : un seul passage
+  lastTickAt = now;
+  const est = estimateArousal();
+  const a = num("smooth") / 100;
+  if (est != null) arousal = a * arousal + (1 - a) * est;
+  history.push({ t: now, a: arousal, hr: HR.live ? HR.bpm : null }); while (history.length && now - history[0].t > 120000) history.shift();
+  const predicted = arousal + Math.max(0, slopePerSec()) * num("anticip");
+  const elapsed = (now - stateSince) / 1000;
+
+  if (App.armed && !App.suspended) {
+    const timeUp = now - armedAt > num("sessionMax") * 60000;
+    if (state === "BUILD") {
+      const start = clamp(num("vibStart") + edges * num("rampBoost"), 0, 100);
+      const p = clamp((now - buildStart) / 1000 / Math.max(1, num("rampS")), 0, 1);
+      curVib = sendLevel("vib", start + (Math.max(start, num("vibMax")) - start) * p);
+      if (closePressed) onEdge("bouton");
+      else if (predicted >= num("edgeThr")) onEdge(`excitation ${arousal.toFixed(0)} → prévue ${predicted.toFixed(0)}`);
+      else if (timeUp) goFinal();
+    } else if (state === "DENY") {
+      if (!$("cutVib").checked) curVib = sendLevel("vib", curVib);
+      if (elapsed >= num("restMin") && arousal <= num("resumeThr")) {
+        if (edges >= num("edgeGoal") || timeUp) goFinal();
+        else { log("Reprise."); setState("BUILD"); }
+      }
+    } else if (state === "FINAL") {
+      if (finalAllow) {
+        curVib = sendLevel("vib", num("finalVib"));
+        if (elapsed >= num("finalS")) { curVib = sendLevel("vib", 0, true); setState("DONE"); log("Session terminée."); }
+      } else { curVib = sendLevel("vib", 0, true); setState("DONE"); log("Session terminée."); }
+    }
+  }
+  closePressed = false;
+  draw();
+}
+
+/* ====================================================================
+ * Affichage
+ * ==================================================================== */
+const spark = $("spark"), sctx = spark.getContext("2d");
+function draw(){
+  $("arBar").style.width = arousal + "%"; $("arVal").textContent = arousal.toFixed(0);
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimBar").style.width = curStim + "%"; $("stimVal").textContent = curStim.toFixed(0);
+  $("hrVal").textContent = HR.live ? HR.bpm : "—";
+  if (HR.live) $("hrState").textContent = "❤️ " + HR.bpm; $("baseVal").textContent = baseline ?? "—";
+  $("agiVal").textContent = agitation == null ? "—" : agitation.toFixed(0);
+  $("edgeN").textContent = edges; $("edgeTarget").textContent = num("edgeGoal");
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0;
+  $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  let mk = $("arMeter").querySelector(".mark"); if (!mk) { mk = document.createElement("div"); mk.className = "mark"; $("arMeter").appendChild(mk); }
+  mk.style.left = clamp(num("edgeThr"), 0, 100) + "%";
+  const Wc = spark.width, Hc = spark.height, now = Date.now();
+  sctx.clearRect(0, 0, Wc, Hc);
+  const yThr = Hc - num("edgeThr") / 100 * Hc;
+  sctx.strokeStyle = "#ffffff55"; sctx.lineWidth = 1; sctx.beginPath(); sctx.moveTo(0, yThr); sctx.lineTo(Wc, yThr); sctx.stroke();
+  const line = (fn, color) => {
+    sctx.strokeStyle = color; sctx.lineWidth = 2; sctx.beginPath(); let started = false;
+    for (const p of history) { const v = fn(p); if (v == null) { started = false; continue; }
+      const x = Wc - (now - p.t) / 120000 * Wc, y = Hc - clamp(v, 0, 100) / 100 * Hc;
+      started ? sctx.lineTo(x, y) : sctx.moveTo(x, y); started = true; }
+    sctx.stroke();
+  };
+  line(p => p.a, "#c77dff");
+  line(p => p.hr == null ? null : (p.hr - 40) / 160 * 100, "#f72585");
+}
+
+/* ====================================================================
+ * Initialisation
+ * ==================================================================== */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Denial", roleLabels: { vib: "Vibration", stim: "Shock (edge)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("closeBtn").onclick = () => { closePressed = true; };
+document.addEventListener("keydown", e => { if (!["INPUT", "SELECT"].includes(e.target.tagName) && e.code === "KeyE") closePressed = true; });
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la session pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", curVib, true), 2000); };
+$("testStim").onclick = () => {
+  if (!App.armed) return log("Arme la session pour tester.");
+  curStim = sendLevel("stim", num("stimLvl"), true);
+  pulseTimers.push(Sched.after(clamp(num("pulseMs"), 100, 3000), () => { curStim = sendLevel("stim", 0, true); }));
+};
+
+const KEY = "denialCfg";
+const FIELDS = ["facing","hrDelta","wHr","motMax","accMax","rotMax","wMot","edgeThr","anticip","resumeThr","restMin","smooth","vibStart","vibMax","rampS","rampBoost","stimLvl","pulseN","pulseMs","pulseGap","stimEsc","edgeGoal","sessionMax","finale","allowPct","finalVib","finalS","maxVib","maxStim"];
+const CHECKS = ["cutVib","stimOn"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS, { baseline });
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+const c = Cfg.load(KEY, FIELDS, CHECKS);
+if (c && c.baseline) baseline = c.baseline;
+applyEquip();
+if (Sensors.native) $("rotRow").classList.add("hidden");   // le capteur natif mesure l'accélération
+updateBg();
+BgHooks.push(tick);   // réveil natif écran verrouillé
+/* Aperçu et contrôle pour la télécommande */
+Partner.init("denial", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Excitation", v: Math.round(arousal), max: 100 },
+    phase: $("stateBig").textContent,
+    chips: [["Edges", `${edges}/${num("edgeGoal")}`], ...(HR.live ? [["Cardio", HR.bpm + " bpm"]] : [])],
+  }),
+  actions: () => {
+    if (!App.armed) return [];
+    const fin = [{ id: "allow", label: "💜 Finir : autoriser" }, { id: "deny", label: "🚫 Finir : refuser" }];
+    if (state === "BUILD") return [{ id: "edge", label: "✋ Edge maintenant" }, ...fin];
+    if (state === "DENY") return [{ id: "resume", label: "▶️ Reprendre la montée" }, ...fin];
+    return [];
+  },
+  doAction: id => {
+    if (!App.armed) return;
+    if (id === "edge" && state === "BUILD") onEdge("partenaire", Partner.can.stim);
+    else if (id === "resume" && state === "DENY") { log("🎮 Reprise demandée par le partenaire."); setState("BUILD"); }
+    else if ((id === "allow" || id === "deny") && (state === "BUILD" || state === "DENY")) { log("🎮 Le partenaire décide de la fin."); goFinal(id === "allow"); }
+  },
+});
+setInterval(tick, 100);
+log("Prêt. Connecte Intiface et les capteurs, calibre le repos, puis « Armer ».");
+</script>
+</body>
+</html>

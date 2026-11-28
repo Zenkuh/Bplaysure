@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<link rel="manifest" href="manifest.webmanifest">
+<title>BPlaysure</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .wrap{max-width:560px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:14px}
+  .brand{display:flex;align-items:center;gap:8px;font-size:24px;font-weight:800;margin:4px 2px 0}
+  .brand .pill{margin-left:auto;font-weight:400}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.07em;color:var(--mute);margin:8px 2px -4px}
+  .eq{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .eq label{display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--panel);border:2px solid var(--line);border-radius:var(--r);padding:12px;min-height:76px;position:relative;cursor:pointer}
+  .eq label:has(input:checked){border-color:var(--acc);background:#211a2b}
+  .eq input{position:absolute;top:10px;right:10px}
+  .eq .ic{font-size:22px}
+  .eq b{font-size:15px}
+  .eq small{color:var(--mute);font-size:11.5px}
+  .card{display:block;text-decoration:none;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;border-left:5px solid var(--c)}
+  .card:active{transform:scale(.99)}
+  .card h3{margin:0 0 4px;font-size:18px}
+  .card p{margin:0;color:var(--mute);font-size:13px}
+  .card.off{opacity:.45;pointer-events:none}
+  .uses{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+  .uses span{font-size:11.5px;padding:3px 9px;border-radius:999px;background:#2a2a33;color:var(--fg)}
+  .uses span.no{background:transparent;border:1px dashed var(--line);color:var(--mute);text-decoration:line-through}
+  .warn{font-size:12.5px;color:var(--warn)}
+  .info{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;font-size:13px;color:var(--mute)}
+  .info b{color:var(--fg)}
+  .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:5px}
+  .seg button{background:transparent;border:none;border-radius:10px;padding:10px 4px;font-size:14px;color:var(--mute)}
+  .seg button.sel{background:var(--acc);color:#fff;font-weight:700}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+  .code{font:600 15px ui-monospace,monospace;letter-spacing:.04em;background:#0b0b0e;border:1px solid var(--line);border-radius:10px;padding:10px;word-break:break-all;user-select:all;margin:8px 0}
+  textarea{width:100%;background:#0b0b0e;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:15px ui-monospace,monospace;resize:none}
+  .bigbtn{width:100%;height:58px;font-size:17px;font-weight:700;border-radius:16px;margin-top:10px}
+  select{max-width:58vw}
+  .card .mIc{float:right;font-size:28px;line-height:1;margin:-2px 0 0 10px;opacity:.9}
+  #hero{display:none}
+  #sideCol{display:flex;flex-direction:column;gap:14px}
+  #tabBar{display:none}
+  /* ---------- téléphone : onglets, liste d'applis groupée, équipement en pastilles ---------- */
+  @media (max-width:999px){
+    .wrap{padding-bottom:calc(104px + env(safe-area-inset-bottom));gap:12px}
+    .brand{position:sticky;top:0;z-index:20;margin:0 -14px;padding:calc(12px + env(safe-area-inset-top)) 16px 12px;background:#0c0c10d6;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid #ffffff0d;font-size:21px;justify-content:center}
+    .brand .pill{position:absolute;right:14px}
+    .brand #tabTitle{font-weight:800}
+    .brand .bName{display:none}
+    body[data-tab="apps"] #profCard,body[data-tab="apps"] #pairCard,body[data-tab="apps"] #openRemote,body[data-tab="apps"] #aboutCard,body[data-tab="apps"] #envInfo{display:none!important}
+    body[data-tab="partner"] #wearerUI,body[data-tab="partner"] #profCard,body[data-tab="partner"] #aboutCard,body[data-tab="partner"] #envInfo{display:none!important}
+    body[data-tab="me"] #wearerUI,body[data-tab="me"] #pairCard,body[data-tab="me"] #openRemote{display:none!important}
+    body[data-tab="partner"].ctl #ctlHint{display:block}
+    details.pairCard>summary,.panel,.seg{border-radius:18px;background:#16161c;border-color:#ffffff0a}
+    /* barre d'onglets */
+    #tabBar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:30;justify-content:space-around;align-items:flex-end;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:#111116ee;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-top:1px solid #ffffff0d}
+    #tabBar button{flex:1;background:none;border:none;color:var(--mute);display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;padding:4px 0}
+    #tabBar button b{font-size:21px;line-height:1;filter:grayscale(1) opacity(.7)}
+    #tabBar button.sel{color:var(--fg)}
+    #tabBar button.sel b{filter:none}
+    #tabBar button.mid b{width:58px;height:58px;margin-top:-26px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ff3d9a,#c77dff);box-shadow:0 8px 22px #ff3d9a55;border:4px solid #0c0c10;filter:none;font-size:25px}
+    #tabBar button.mid.sel{color:var(--acc)}
+    /* équipement : pastilles défilantes */
+    .eq{display:flex;overflow-x:auto;gap:8px;scrollbar-width:none;margin:0 -14px;padding:0 14px}
+    .eq::-webkit-scrollbar{display:none}
+    .eq label{flex:none;flex-direction:row;align-items:center;gap:7px;min-height:0;padding:9px 14px;border-radius:999px;border-width:1px;background:#16161c}
+    .eq label small{display:none}
+    .eq label b{font-size:13.5px;font-weight:600}
+    .eq .ic{font-size:17px}
+    .eq input{position:absolute;opacity:0;pointer-events:none}
+    .eq label:has(input:checked){border-color:var(--acc);background:#2a1022}
+    .eq label:has(input:checked) b::after{content:" ✓";color:var(--acc)}
+    /* applis : une liste groupée comme un menu de réglages */
+    #modeGrid{background:#16161c;border:1px solid #ffffff0a;border-radius:20px;gap:0!important;overflow:hidden}
+    #modeGrid .card{display:grid;grid-template-columns:46px minmax(0,1fr) auto;grid-template-areas:"ic t ch" "ic d ch";column-gap:12px;align-items:center;background:none;border:none;border-radius:0;border-bottom:1px solid #ffffff09;padding:12px 14px}
+    #modeGrid .card:last-child{border-bottom:none}
+    #modeGrid .card::after{content:"›";grid-area:ch;color:#6d6d7a;font-size:26px;font-weight:300}
+    #modeGrid .card .mIc{grid-area:ic;float:none;margin:0;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:21px;background:color-mix(in srgb,var(--c) 22%,#16161c);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 45%,transparent)}
+    #modeGrid .card h3{grid-area:t;font-size:16px;margin:0;display:flex;align-items:center;gap:6px}
+    #modeGrid .card h3 .lvlTag{float:none!important;margin-left:auto;font-size:10.5px;padding:1px 7px}
+    #modeGrid .card p{grid-area:d;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #modeGrid .card .uses{display:none}
+    #modeGrid .card:active{background:#ffffff08;transform:none}
+    h2{margin:10px 4px 2px}
+  }
+  /* ---------- grand écran : menu façon site web ---------- */
+  @media (min-width:1000px){
+    body{background:radial-gradient(1200px 500px at 70% -10%,#2a1640 0,transparent 60%),var(--bg)}
+    .wrap{max-width:1320px;padding:0 24px 40px;display:grid;grid-template-columns:380px minmax(0,1fr);grid-template-areas:"brand brand" "upd upd" "hero hero" "side main";gap:18px 28px;align-items:start}
+    .brand{grid-area:brand;position:sticky;top:0;z-index:20;margin:0 -24px;padding:14px 24px;background:#0f0f13d9;backdrop-filter:blur(10px);border-bottom:1px solid var(--line);font-size:26px}
+    .brand::before{content:"";width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--acc),var(--vib));box-shadow:0 0 18px #c77dff66}
+    #updBox{grid-area:upd}
+    #hero{grid-area:hero;display:block;padding:26px 30px;border-radius:22px;background:linear-gradient(120deg,#26163a,#14202c);border:1px solid #ffffff12}
+    #hero h1{margin:0 0 6px;font-size:30px;letter-spacing:-.01em}
+    #hero p{margin:0;color:#c9c9d6;max-width:760px}
+    #hero .heroStats{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    #hero .heroStats span{background:#ffffff10;border:1px solid #ffffff14;border-radius:999px;padding:5px 12px;font-size:13px;color:#ddd}
+    #sideCol{grid-area:side;display:flex;flex-direction:column;gap:14px;position:sticky;top:80px;max-height:calc(100vh - 96px);overflow:auto;padding-right:4px}
+    #wearerUI{grid-area:main}
+    .eq{grid-template-columns:repeat(5,1fr)}
+    #modeGrid{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px!important}
+    .card{padding:20px;border-left-width:0;border-top:4px solid var(--c);transition:transform .15s,box-shadow .15s,border-color .15s;min-height:150px;display:flex;flex-direction:column}
+    .card h3{font-size:19px}
+    .card p{font-size:13.5px;flex:1}
+    .card .mIc{font-size:34px}
+    h2{font-size:13px;margin-top:14px}
+    select{max-width:240px}
+    #lockScr{background:radial-gradient(800px 400px at 50% 30%,#2a1640,transparent 70%),var(--bg)}
+  }
+  details.pairCard{display:flex;flex-direction:column;gap:10px}
+  details.pairCard>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);font-weight:700}
+  details.pairCard>summary::-webkit-details-marker{display:none}
+  details.pairCard>summary small{font-weight:400;color:var(--mute);margin-left:auto;text-align:right}
+  details.pairCard>summary::after{content:"›";color:var(--mute);font-size:22px;transition:transform .15s}
+  details.pairCard[open]>summary::after{transform:rotate(90deg)}
+  details.pairCard[open]>summary{margin-bottom:10px}
+  details.pairCard>summary>span{white-space:nowrap}
+  details.pairCard>.seg,details.pairCard>.panel{margin-bottom:10px}
+  /* profils */
+  .pickRow{display:flex;gap:6px;align-items:center;margin:6px 0}
+  .pickRow select{flex:1;min-width:0}
+  .pickRow button{flex:none;min-width:44px;padding:0 10px}
+  #lockScr{position:fixed;inset:0;z-index:9500;background:var(--bg,#0d0d12);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center}
+  #lockScr input{font:800 28px ui-monospace,monospace;text-align:center;letter-spacing:8px;width:220px;background:var(--panel,#16161e);color:var(--fg,#eee);border:1px solid var(--line,#333);border-radius:12px;padding:8px}
+  #lockScr .others{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:16px}
+</style>
+</head>
+<body>
+<nav id="tabBar">
+  <button data-t="partner"><b>💞</b>Partenaire</button>
+  <button data-t="apps" class="mid"><b>🎮</b>Applis</button>
+  <button data-t="me"><b>👤</b>Moi</button>
+</nav>
+<div class="wrap">
+  <div class="brand"><span class="bName">BPlaysure</span><span id="tabTitle" class="hidden"></span> <span id="partnerState" class="pill hidden"></span></div>
+
+  <section id="hero">
+    <h1>Tes jeux connectés, sur grand écran</h1>
+    <p>Jouets et e-stim via Intiface Central, webcam pour les poses, la profondeur, le regard et l'ahegao, partenaire à distance. Même carrière et mêmes réglages que sur le téléphone : exporte ton profil d'un côté, importe-le de l'autre.</p>
+    <div class="heroStats" id="heroStats"></div>
+  </section>
+
+  <div class="panel hidden" id="updBox" style="border-color:#52d273;margin-bottom:12px">
+    <b id="updTitle"></b><br><small class="muted" id="updSub"></small>
+    <pre id="updNotes" class="muted" style="white-space:pre-wrap;font:inherit;font-size:13px;max-height:180px;overflow:auto;margin:8px 0"></pre>
+    <div class="meter hidden" id="updProg" style="margin:8px 0"><div id="updBar" class="vibC"></div></div>
+    <p class="muted" id="updMsg" style="margin:4px 0"></p>
+    <div class="row"><button id="updGo" class="primary">⬇️ Mettre à jour</button><button id="updLater">Plus tard</button><button id="updSkip">Ignorer</button></div>
+  </div>
+
+  <div id="lockScr" class="hidden">
+    <div style="font-size:52px">🔒</div>
+    <h2 id="lockName" style="margin:0"></h2>
+    <input id="lockPin" type="password" inputmode="numeric" maxlength="12" placeholder="PIN" autocomplete="off">
+    <button id="lockGo" class="primary" style="min-width:220px">Déverrouiller</button>
+    <p class="muted" id="lockMsg"></p>
+    <div class="others" id="lockOthers"></div>
+  </div>
+
+  <div id="sideCol">
+  <details class="pairCard" id="profCard">
+  <summary><span>👤 Profil</span><small id="profSum">—</small></summary>
+  <div class="panel">
+    <div class="pickRow"><select id="profSel"></select><button id="profAdd" title="Nouveau profil">➕</button><button id="profRen" title="Renommer">✏️</button><button id="profDel" title="Supprimer">🗑️</button></div>
+    <p class="muted" style="margin:4px 0 8px">Chaque profil a sa carrière, ses réglages, son équipement et ses partenaires.</p>
+    <div class="row"><button id="profPin">🔒 PIN…</button><button id="profExp">📤 Exporter</button><button id="profImp">📥 Importer</button></div>
+    <input id="profFile" type="file" accept=".json,application/json,text/plain,application/octet-stream" class="hidden">
+    <p class="muted" style="margin:6px 0 0">La sauvegarde (fichier .json) permet de retrouver ce profil sur un autre téléphone ou sur ordinateur : « Importer » le recrée en nouveau profil, sans rien écraser. La galerie d'images d'Eye Contact n'est pas incluse. Le PIN est un simple verrou d'accès, les données ne sont pas chiffrées.</p>
+  </div>
+  </details>
+
+  <details class="pairCard" id="pairCard" open>
+  <summary><span>🎮 Partenaire</span><small id="pairSum">—</small></summary>
+  <div class="seg" id="roleSeg">
+    <button data-r="none">Seul·e</button>
+    <button data-r="wear">Je porte</button>
+    <button data-r="ctl">Je contrôle</button>
+  </div>
+
+  <!-- PORTEUR -->
+  <div class="panel hidden" id="wearPanel">
+    <div class="pickRow"><span>👑 Maître</span><select id="mstSel"></select><button id="mstAdd" title="Ajouter un Maître">➕</button><button id="mstRen" title="Renommer">✏️</button><button id="mstDel" title="Supprimer">🗑️</button></div>
+    <p class="muted" style="margin:0 0 8px">Chaque Maître (ou chaque appareil d'un même Maître : téléphone, PC…) a son propre code, ses permissions et son accord Master/Sub. Choisis ici celui qui te contrôle maintenant.</p>
+    <p class="muted">Donne ce code à ton/ta partenaire : sur son téléphone, menu → « Je contrôle ». Contrôle : <b id="fp">—</b> (doit s'afficher pareil chez lui/elle).</p>
+    <div class="code" id="pairCode">—</div>
+    <div class="row"><button id="shareCode" class="primary">Partager</button><button id="copyCode">Copier</button><button id="newCode">Nouveau code</button></div>
+    <div class="panel" id="msBox" style="margin:10px 0">
+      <label class="f"><span><b class="crown">👑 Mode Master/Sub</b><br><small class="muted" id="msState">désactivé</small></span><input id="msToggle" type="checkbox"></label>
+      <p class="muted" style="margin:6px 0 0">Pleins pouvoirs au partenaire sur les vibrations et le Shock, sans plafonds partenaire. Il faut ton accord et le sien ; le choix est mémorisé. Chacun peut l'arrêter à tout moment.</p>
+    </div>
+    <div id="permBox">
+    <label class="f"><span>Le partenaire peut…</span>
+      <select id="permLevel">
+        <option value="view">Seulement voir</option>
+        <option value="vib">Voir + vibrations manuelles</option>
+        <option value="full">Tout : armer, désarmer, changer d'app, actions</option>
+      </select>
+    </label>
+    <label class="f"><span>Plafond des vibrations à distance (%)</span><input id="vibCap" type="number" min="0" max="100" value="60"></label>
+    <label class="f"><span>En Sortie, rester sous le plafond de discrétion</span><input id="discreet" type="checkbox" checked></label>
+    <div data-need="stim">
+      <label class="f"><span>⚡ Autoriser le bouton Shock (e-stim)</span><input id="allowStim" type="checkbox"></label>
+      <label class="f" id="stimCapRow"><span>Plafond du Shock (%)</span><input id="stimCap" type="number" min="0" max="100" value="20"></label>
+    </div>
+    </div>
+    <label class="f"><span>Relais</span><select id="broker"><option value="emqx">EMQX (Europe)</option><option value="hivemq">HiveMQ</option></select></label>
+    <p class="muted">Chiffré de bout en bout. Rien ne se passe tant que tu n'as pas armé (ou laissé armer) une session, et ton bouton ARRÊT annule toujours tout. Un armement à distance est précédé de 3 bips : ARRÊT pour refuser.</p>
+  </div>
+
+  <!-- TÉLÉCOMMANDE -->
+  <div class="panel hidden" id="ctlPanel">
+    <div class="pickRow"><span>🎯 Sub</span><select id="subSel"></select><button id="subAdd" title="Ajouter">➕</button><button id="subRen" title="Renommer">✏️</button><button id="subDel" title="Supprimer">🗑️</button></div>
+    <p class="muted">Colle le code partagé par la personne qui porte (menu → « Je porte »). Chaque Sub enregistrée garde son code.</p>
+    <textarea id="codeIn" rows="3" placeholder="XXXX-XXXX-…" autocomplete="off" autocapitalize="characters" spellcheck="false"></textarea>
+    <p class="muted">Contrôle : <b id="fpIn">—</b></p>
+    <label class="f"><span>Relais</span><select id="brokerIn"><option value="emqx">EMQX (Europe)</option><option value="hivemq">HiveMQ</option></select></label>
+  </div>
+  </details>
+  <button id="openRemote" class="primary bigbtn hidden">🎮 Ouvrir la télécommande</button>
+  </div>
+
+  <div id="wearerUI">
+    <h2>Mon équipement</h2>
+    <div class="eq" id="eq" style="margin-top:12px">
+      <label><input type="checkbox" data-k="vib"><span class="ic">〰️</span><b>Jouet vibrant</b><small>via Intiface</small></label>
+      <label><input type="checkbox" data-k="stim"><span class="ic">⚡</span><b>E-stim</b><small>électrostimulation via Intiface</small></label>
+      <label><input type="checkbox" data-k="hr"><span class="ic">❤️</span><b>Ceinture cardio</b><small>Bluetooth</small></label>
+      <label><input type="checkbox" data-k="cam"><span class="ic">📷</span><b>Caméra</b><small>du téléphone</small></label>
+      <label><input type="checkbox" data-k="gyro"><span class="ic">📱</span><b>Gyroscope</b><small>téléphone posé sur toi</small></label>
+    </div>
+    <p class="warn" id="eqWarn"></p>
+    <div class="panel" data-need="hr" style="margin-top:10px">
+      <div class="row" style="margin:0"><span style="flex:1">❤️ Ceinture : <b id="hrMenu">—</b> <small class="muted" id="hrMenuSt"></small></span><button id="hrMenuBtn">Connecter</button></div>
+      <p class="muted" style="margin:6px 0 0">Reste connectée dans tous les modes, se reconnecte toute seule, et le cardio est visible en direct sur la télécommande.</p>
+    </div>
+
+    <h2>Modes</h2>
+    <p class="muted hidden" id="soloNote">Mode Seul·e : Tribute et Obedience Deck (qui exigent un Maître) sont masqués. Choisis « Je porte » pour les retrouver.</p>
+    <div id="modeGrid" style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+      <a class="card" id="m-motion" href="motion.html" style="--c:var(--vib)">
+        <h3>Keep Pose</h3>
+        <p>Enregistre une posture à tenir : tenue → vibration croissante, posture perdue → shock et temps de pénalité. Reconnaissance du squelette par la caméra.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-deep" href="deep.html" style="--c:var(--acc)">
+        <h3>Blow Trainer</h3>
+        <p>Profondeur mesurée (bouche suivie par l'IA, gode coloré ou repère), compteur de 100 %, guide de rythme, consignes vocales, séries et pauses respiration imposées. Aussi sur ton/ta partenaire.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-denial" href="denial.html" style="--c:var(--stim)">
+        <h3>Denial Control</h3>
+        <p>Montée progressive, détection de l'approche, edges, fin autorisée ou refusée.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-public" href="public.html" style="--c:var(--warn)">
+        <h3>Public Play</h3>
+        <p>Taquineries discrètes en public : montée lente, plafond anti-bruit, selon que tu marches, es assis·e ou en transport. Fonctionne écran éteint.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-seek" href="seek.html" style="--c:#52d273">
+        <h3>Vibe &amp; Seek</h3>
+        <p>Chasse au trésor GPS : dessine une zone sur la carte, un trésor y est caché, les vibrations te guident. Creuse au bon endroit avant d'épuiser tes jetons. Fonctionne écran éteint.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-making" href="making.html" style="--c:#c77dff">
+        <h3>Making Pose</h3>
+        <p>Une pose est annoncée (garde-à-vous, Nadu, à genoux, table…) : prends-la à temps et tiens-la. L'IA de la caméra juge la ressemblance : vibration si c'est bien, shock si tu t'en éloignes.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-tribute" href="tribute.html" style="--c:#ffd166">
+        <h3>Tribute</h3>
+        <p>Garde le doigt sur l'écran pendant une série de shocks croissants pour gagner des crédits de plaisir. Ton Maître les dépense en vibrations… quand il le décide.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-eyes" href="eyes.html" style="--c:#4cc9f0">
+        <h3>Eye Contact</h3>
+        <p>Regarde la caméra sans détourner les yeux : la vibration monte tant que le regard tient, un shock part dès que tu fuis ou fermes les yeux.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-deck" href="deck.html" style="--c:#c77dff">
+        <h3>Obedience Deck</h3>
+        <p>Le Maître prépare des cartes cachées (immobilité, shocks, vagues, tease…). Un seul bouton : « Je me soumets ». Abandonner = pénalité de brat.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-mind" href="mind.html" style="--c:#4cc9f0">
+        <h3>Mind Games</h3>
+        <p>Master Mind (vert, orange, rouge), Simon sous vibration, séquence dictée à l'oreille : chaque erreur se paie, chaque série est récompensée.</p>
+        <div class="uses"></div>
+      </a>
+      <a class="card" id="m-ahegao" href="ahegao.html" style="--c:#ff7eb6">
+        <h3>Ahegao Detector</h3>
+        <p>L'IA de la caméra reconnaît ta tête d'ahegao : vibration tant que tu la fais, shock si tu ne la fais plus depuis trop longtemps.</p>
+        <div class="uses"></div>
+      </a>
+    </div>
+
+    <div class="info" style="margin-top:14px">
+      <b>Avant de commencer :</b> lance <b>Intiface Central</b> (sur ce téléphone ou un PC du même Wi-Fi) et démarre son serveur.<br><br>
+      <b>Sécurité :</b> le bouton ARRÊT, le retour au menu ou quitter l'application coupent tout immédiatement. Teste toujours les intensités au plus bas d'abord. Pas d'électrostimulation au-dessus de la taille ni à travers le thorax, ni si tu as un stimulateur ou un problème cardiaque.
+    </div>
+  </div>
+  <details class="pairCard" id="aboutCard" style="margin-top:14px">
+    <summary><span>ℹ️ À propos & mises à jour</span><small>version <b id="verCur">—</b></small></summary>
+    <div class="panel">
+      <label class="f"><span>Dépôt GitHub des versions (propriétaire/dépôt)</span><input id="updRepo" type="text" placeholder="ex. pseudo/bplaysure" autocapitalize="off" spellcheck="false" style="max-width:55vw"></label>
+      <label class="f"><span>Vérifier au lancement</span><input id="updAuto" type="checkbox" checked></label>
+      <div class="row"><button id="updCheck">🔄 Vérifier maintenant</button></div>
+      <p class="muted" id="updInfo"></p>
+    </div>
+  </details>
+  <p class="muted" id="envInfo"></p>
+  <div id="log" class="hidden"></div>
+</div>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="update.js"></script>
+<script>
+"use strict";
+nativeCall("setBackground", false);
+nativeCall("sensorsStop");
+
+/* ---------------- Équipement & modes ---------------- */
+const EXTRA = { motion: [], deep: ["cam", "gyro"], denial: ["hr", "cam", "gyro"], public: ["gyro"], ahegao: [], seek: ["stim"], making: [], tribute: [], eyes: [], deck: ["gyro"], mind: [] };
+function refresh(){
+  for (const k of Object.keys(MODE_REQ)) {
+    const card = $("m-" + k), box = card.querySelector(".uses"), m = MODE_REQ[k]; box.innerHTML = "";
+    [...m.out, ...m.req, ...EXTRA[k]].forEach(e => {
+      const s = document.createElement("span"); s.textContent = EQUIP_LABELS[e];
+      if (!Equip[e]) s.className = "no"; box.appendChild(s);
+    });
+    card.classList.toggle("off", !modeAllowed(k));
+  }
+  $("eqWarn").textContent = !Equip.vib && !Equip.stim ? "Coche au moins un jouet (vibrant ou e-stim) pour piloter quelque chose."
+    : (!Equip.cam && !Equip.gyro ? "Sans caméra ni gyroscope, seuls Denial Control et Public Play restent utilisables." : "");
+  applyEquip();
+}
+document.querySelectorAll("#eq input").forEach(i => {
+  i.checked = !!Equip[i.dataset.k];
+  i.onchange = () => { Equip[i.dataset.k] = i.checked; store.set("bpEquip", { vib: Equip.vib, stim: Equip.stim, hr: Equip.hr, cam: Equip.cam, gyro: Equip.gyro }); refresh(); Partner.send(true); };
+});
+
+/* ---------------- Ceinture cardio ---------------- */
+HR.onStatus = t => { $("hrMenuSt").textContent = t; };
+$("hrMenuBtn").onclick = async () => { try { await HR.connect(); } catch (e) { $("hrMenuSt").textContent = e.message; } };
+setInterval(() => { $("hrMenu").textContent = HR.live ? HR.bpm + " bpm" : "—"; }, 500);
+
+/* ---------------- Niveaux de progression à droite du nom de chaque app ---------------- */
+function showLevels(){
+  for (const a of Object.keys(GAME_APPS)) {
+    const h = $("m-" + a).querySelector("h3"); let t = h.querySelector(".lvlTag");
+    if (!t) { t = document.createElement("span"); t.className = "lvlTag"; t.style.float = "right"; h.appendChild(t); }
+    const g = Game.get(a); t.textContent = "Niv. " + g.lvl + (g.lvl >= MAX_LVL ? " 👑" : "");
+    t.classList.toggle("hidden", role === "ctl");
+  }
+}
+
+/* ---------------- Profils ---------------- */
+function renderProfiles(){
+  $("profSel").innerHTML = Profiles.list.map(p => `<option value="${p.id}">${p.pin ? "🔒 " : ""}${p.name.replace(/</g, "&lt;")}</option>`).join("");
+  $("profSel").value = Profiles.cur.id;
+  $("profSum").textContent = Profiles.cur.name + (Profiles.list.length > 1 ? ` · ${Profiles.list.length} profils` : "");
+  $("profDel").disabled = Profiles.list.length < 2;
+  $("profPin").textContent = Profiles.cur.pin ? "🔓 Retirer le PIN" : "🔒 Ajouter un PIN";
+}
+const reloadMenu = () => { if (typeof Partner !== "undefined" && Partner.started) Partner.stop(); location.replace("index.html"); };
+$("profSel").onchange = () => { Profiles.switchTo($("profSel").value); reloadMenu(); };
+$("profAdd").onclick = async () => {
+  const n = await confirmDialog({ title: "Nouveau profil", html: "<p>Il démarre vierge : niveau 1 partout, réglages par défaut, aucun partenaire.</p>", input: { placeholder: "Nom du profil", maxlength: 30 }, ok: "Créer" });
+  if (!n || !n.trim()) return; Profiles.switchTo(Profiles.add(n.trim())); reloadMenu();
+};
+$("profRen").onclick = async () => {
+  const n = await confirmDialog({ title: "Renommer le profil", input: { value: Profiles.cur.name, maxlength: 30 }, ok: "Renommer" });
+  if (!n || !n.trim()) return; Profiles.cur.name = n.trim().slice(0, 30); Profiles.save(); renderProfiles();
+};
+$("profDel").onclick = async () => {
+  const c = Profiles.cur;
+  if (!await confirmDialog({ title: `Supprimer « ${c.name} » ?`, html: "<p>Sa carrière, ses réglages et ses partenaires seront effacés de cet appareil. Exporte-le d'abord si tu veux le garder.</p>", check: "Je veux supprimer ce profil", ok: "Supprimer" })) return;
+  Profiles.remove(c.id); reloadMenu();
+};
+$("profPin").onclick = async () => {
+  const c = Profiles.cur;
+  if (c.pin) { if (await confirmDialog({ title: "Retirer le PIN ?", html: `<p>« ${c.name} » s'ouvrira sans code.</p>`, ok: "Retirer" })) { delete c.pin; Profiles.save(); renderProfiles(); } return; }
+  const a = await confirmDialog({ title: "Choisir un PIN", html: "<p>4 à 12 chiffres, demandé à chaque ouverture de l'appli sur ce profil.</p>", input: { type: "password", maxlength: 12, placeholder: "PIN" }, ok: "Suivant" });
+  if (a == null) return; if (!/^\d{4,12}$/.test(a)) return toast("PIN invalide", "4 à 12 chiffres", "#ff4d6d");
+  const b = await confirmDialog({ title: "Confirmer le PIN", input: { type: "password", maxlength: 12, placeholder: "PIN" }, ok: "Valider" });
+  if (b !== a) return toast("Les deux PIN ne correspondent pas", "", "#ff4d6d");
+  c.pin = Profiles.hash(c.id, a); Profiles.save(); sessionStorage.setItem("bpUnlocked", c.id); renderProfiles(); toast("🔒 PIN enregistré");
+};
+$("profExp").onclick = () => {
+  const d = Profiles.exportData(), day = new Date().toISOString().slice(0, 10);
+  saveTextFile(`BPlaysure-${Profiles.cur.name.replace(/[^\w-]+/g, "_")}-${day}.json`, JSON.stringify(d));
+  log(`📤 Sauvegarde du profil « ${Profiles.cur.name} » (${Object.keys(d.data).length} éléments).`);
+};
+$("profImp").onclick = () => $("profFile").click();
+$("profFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const o = JSON.parse(await f.text()); const name = o && o.name;
+    if (!await confirmDialog({ title: "Importer cette sauvegarde ?", html: `<p>Un <b>nouveau profil</b> « ${String(name || "?").replace(/</g, "&lt;")} » sera créé avec sa carrière et ses réglages. Aucun profil existant n'est modifié.</p>`, ok: "Importer" })) return;
+    const id = Profiles.importData(o); Profiles.switchTo(id); toast("📥 Profil importé"); setTimeout(reloadMenu, 600);
+  } catch (err) { toast("Import impossible", err.message, "#ff4d6d"); }
+};
+/* écran de verrouillage (profil protégé par PIN) */
+function showLock(){
+  const c = Profiles.cur; if (Profiles.unlocked) { $("lockScr").classList.add("hidden"); return false; }
+  $("lockScr").classList.remove("hidden"); $("lockName").textContent = c.name; $("lockPin").value = ""; $("lockMsg").textContent = "";
+  $("lockOthers").innerHTML = Profiles.list.filter(p => p.id !== c.id).map(p => `<button data-id="${p.id}">${p.pin ? "🔒 " : "👤 "}${p.name.replace(/</g, "&lt;")}</button>`).join("");
+  $("lockOthers").querySelectorAll("button").forEach(b => b.onclick = () => { Profiles.switchTo(b.dataset.id); reloadMenu(); });
+  setTimeout(() => $("lockPin").focus(), 100);
+  return true;
+}
+$("lockGo").onclick = () => { if (Profiles.unlock($("lockPin").value)) reloadMenu(); else { $("lockMsg").textContent = "PIN incorrect"; $("lockPin").value = ""; } };
+$("lockPin").onkeydown = e => { if (e.key === "Enter") $("lockGo").onclick(); };
+renderProfiles();
+
+/* ---------------- Présentation (icônes des applis, grand écran) ---------------- */
+document.querySelectorAll("a.card").forEach(c => {
+  const k = c.id.replace(/^m-/, ""), h = c.querySelector("h3");
+  if (h && MODE_ICONS[k] && !c.querySelector(".mIc")) { const i = document.createElement("span"); i.className = "mIc"; i.textContent = MODE_ICONS[k]; c.insertBefore(i, h); }
+});
+if (IS_DESKTOP) {   // libellés adaptés à un ordinateur
+  const lab = (k, t) => { const e = document.querySelector(`#eq [data-k="${k}"]`); if (e) e.parentElement.querySelector("small").textContent = t; };
+  lab("cam", "webcam"); lab("gyro", "absent sur ordinateur"); lab("hr", "Bluetooth (Chrome / Edge)"); lab("vib", "via Intiface Central"); lab("stim", "électrostimulation via Intiface Central");
+}
+/* ---------------- Onglets (téléphone) ---------------- */
+const TAB_TITLES = { apps: "Applis", partner: "Partenaire", me: "Moi" };
+function setTab(t){
+  document.body.dataset.tab = t; store.set("bpMenuTab", t);
+  document.querySelectorAll("#tabBar button").forEach(b => b.classList.toggle("sel", b.dataset.t === t));
+  $("tabTitle").textContent = TAB_TITLES[t]; $("tabTitle").classList.toggle("hidden", wideMQ.matches);
+  if (!wideMQ.matches) { if (t === "partner") $("pairCard").open = true; if (t === "me") $("profCard").open = true; window.scrollTo(0, 0); }
+}
+document.querySelectorAll("#tabBar button").forEach(b => b.onclick = () => setTab(b.dataset.t));
+const wideMQ = matchMedia("(min-width:1000px)");
+wideMQ.addEventListener("change", () => setTab(document.body.dataset.tab || "apps"));
+function placeSide(){
+  // grand écran : « À propos » et l'environnement rejoignent la colonne latérale
+  const side = $("sideCol"), about = $("aboutCard"), env = $("envInfo");
+  if (wideMQ.matches) { side.appendChild(about); side.appendChild(env); }
+  else { const w = document.querySelector(".wrap"); w.appendChild(about); w.appendChild(env); }
+}
+wideMQ.addEventListener("change", placeSide); placeSide();
+function heroStats(){
+  const lv = Object.keys(GAME_APPS).map(a => Game.get(a).lvl), best = Math.max(...lv), sum = lv.reduce((x, y) => x + y, 0);
+  $("heroStats").innerHTML = [`👤 ${Profiles.cur.name.replace(/</g, "&lt;")}`, `🏆 ${sum} niveaux cumulés · meilleur niv. ${best}`, `📱 ${Object.keys(GAME_APPS).length} applis`, IS_DESKTOP ? "💻 version ordinateur" : ""].filter(Boolean).map(t => `<span>${t}</span>`).join("");
+}
+
+/* ---------------- Maîtres (porteur) ---------------- */
+function renderMasters(){
+  $("mstSel").innerHTML = Masters.list.map(x => `<option value="${x.id}">${x.name.replace(/</g, "&lt;")}${x.cfg.msWearer && x.cfg.msPartner && x.cfg.msCode === x.cfg.code ? " 👑" : ""}</option>`).join("");
+  $("mstSel").value = Masters.cur.id; $("mstDel").disabled = Masters.list.length < 2;
+}
+$("mstSel").onchange = () => { Masters.activate($("mstSel").value); reloadMenu(); };
+$("mstAdd").onclick = async () => {
+  const n = await confirmDialog({ title: "Ajouter un Maître", html: "<p>Un nouveau code sera créé pour lui (ou pour un autre appareil du même Maître, ex. « Zenkuh · PC »).</p>", input: { placeholder: "Nom", maxlength: 30 }, ok: "Ajouter" });
+  if (!n || !n.trim()) return; Masters.activate(Masters.add(n.trim())); reloadMenu();
+};
+$("mstRen").onclick = async () => { const n = await confirmDialog({ title: "Renommer", input: { value: Masters.cur.name, maxlength: 30 }, ok: "Renommer" }); if (n && n.trim()) { Masters.rename(Masters.cur.id, n.trim()); renderMasters(); } };
+$("mstDel").onclick = async () => {
+  if (!await confirmDialog({ title: `Supprimer « ${Masters.cur.name} » ?`, html: "<p>Son code et son accord Master/Sub seront oubliés.</p>", ok: "Supprimer" })) return;
+  Masters.remove(Masters.cur.id); reloadMenu();
+};
+renderMasters();
+
+/* ---------------- Subs enregistrées (télécommande) ---------------- */
+const Subs = (() => {
+  let s = store.get("bpSubs", null);
+  if (!s || !Array.isArray(s.list) || !s.list.length) { s = { list: [{ id: "s1", name: "Sub", code: store.get("bpRemoteCode", ""), broker: store.get("bpRemoteBroker", "emqx") }], active: "s1" }; store.set("bpSubs", s); }
+  if (!s.list.some(x => x.id === s.active)) s.active = s.list[0].id;
+  return { raw: s, get cur(){ return s.list.find(x => x.id === s.active); }, save(){ store.set("bpSubs", s); } };
+})();
+function renderSubs(){
+  $("subSel").innerHTML = Subs.raw.list.map(x => `<option value="${x.id}">${x.name.replace(/</g, "&lt;")}</option>`).join("");
+  $("subSel").value = Subs.cur.id; $("subDel").disabled = Subs.raw.list.length < 2;
+  $("codeIn").value = Subs.cur.code || ""; $("brokerIn").value = Subs.cur.broker || "emqx"; if (typeof fpIn === "function") fpIn();
+}
+$("subSel").onchange = () => { Subs.raw.active = $("subSel").value; Subs.save(); renderSubs(); };
+$("subAdd").onclick = async () => {
+  const n = await confirmDialog({ title: "Ajouter une Sub", input: { placeholder: "Nom", maxlength: 30 }, ok: "Ajouter" });
+  if (!n || !n.trim()) return; const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  Subs.raw.list.push({ id, name: n.trim().slice(0, 30), code: "", broker: "emqx" }); Subs.raw.active = id; Subs.save(); renderSubs();
+};
+$("subRen").onclick = async () => { const n = await confirmDialog({ title: "Renommer", input: { value: Subs.cur.name, maxlength: 30 }, ok: "Renommer" }); if (n && n.trim()) { Subs.cur.name = n.trim().slice(0, 30); Subs.save(); renderSubs(); } };
+$("subDel").onclick = async () => {
+  if (!await confirmDialog({ title: `Supprimer « ${Subs.cur.name} » ?`, ok: "Supprimer" })) return;
+  Subs.raw.list = Subs.raw.list.filter(x => x.id !== Subs.cur.id); Subs.raw.active = Subs.raw.list[0].id; Subs.save(); renderSubs();
+};
+
+/* ---------------- Rôle ---------------- */
+let role = store.get("bpRole", Partner.cfg.enabled ? "wear" : "none");
+function setRole(r){
+  role = r; store.set("bpRole", r);
+  document.querySelectorAll("#roleSeg button").forEach(b => b.classList.toggle("sel", b.dataset.r === r));
+  $("wearPanel").classList.toggle("hidden", r !== "wear");
+  $("ctlPanel").classList.toggle("hidden", r !== "ctl");
+  $("openRemote").classList.toggle("hidden", r !== "ctl");
+  if (typeof showLevels === "function") showLevels();
+  $("wearerUI").classList.toggle("hidden", r === "ctl");
+  // seul·e : pas d'applis qui exigent un Maître
+  for (const k of MASTER_ONLY) { const c = $("m-" + k); if (c) c.classList.toggle("hidden", r === "none"); }
+  $("soloNote").classList.toggle("hidden", r !== "none");
+  if (r === "ctl" && document.body.dataset.tab === "apps" && typeof setTab === "function") setTab("partner");
+  const en = r === "wear";
+  if (Partner.cfg.enabled !== en) { Partner.cfg.enabled = en; Partner.save(); en ? Partner.start() : Partner.stop(); }
+  updateState();
+}
+document.querySelectorAll("#roleSeg button").forEach(b => b.onclick = () => setRole(b.dataset.r));
+
+/* ---------------- Porteur ---------------- */
+function showCode(){ $("pairCode").textContent = Partner.cfg.code; $("fp").textContent = Link.fingerprint(Partner.cfg.code); }
+const P = Partner.cfg;
+$("permLevel").value = P.level; $("vibCap").value = P.vibCap; $("discreet").checked = P.discreet;
+$("allowStim").checked = P.stim; $("stimCap").value = P.stimCap; $("broker").value = P.broker;
+function savePerm(){
+  P.level = $("permLevel").value; P.vibCap = clamp(num("vibCap"), 0, 100); P.discreet = $("discreet").checked;
+  P.stim = $("allowStim").checked; P.stimCap = clamp(num("stimCap"), 0, 100);
+  $("stimCapRow").classList.toggle("hidden", !P.stim);
+  Partner.save(); Partner.send(true);
+}
+["permLevel", "vibCap", "discreet", "allowStim", "stimCap"].forEach(id => $(id).onchange = savePerm);
+$("broker").onchange = () => { P.broker = $("broker").value; Partner.save(); Partner.restart(); };
+$("newCode").onclick = () => {
+  P.code = Link.newCode(); P.msPartner = false; P.msCode = null; P.msSince = null;   // nouveau partenaire = nouvel accord
+  Partner.save(); showCode(); Partner.restart(); log("Nouveau code."); updateMs();
+};
+
+/* ---------------- Master/Sub ---------------- */
+function updateMs(){
+  $("msToggle").checked = !!P.msWearer;
+  const st = Partner.ms ? "✅ actif depuis le " + new Date(P.msSince).toLocaleDateString() + " — accord des deux enregistré"
+    : P.msWearer ? "⏳ proposé : en attente de l'accord du partenaire sur sa télécommande" : "désactivé";
+  $("msState").textContent = st;
+  $("msBox").classList.toggle("ms", Partner.ms);
+  $("permBox").style.opacity = Partner.ms ? .4 : 1; $("permBox").style.pointerEvents = Partner.ms ? "none" : "";
+}
+$("msToggle").onchange = async () => {
+  if (!$("msToggle").checked) { Partner.msRevoke("wearer"); updateMs(); return; }
+  $("msToggle").checked = false;
+  const ok = await confirmDialog({
+    title: "👑 Activer le mode Master/Sub ?",
+    html: `<p>Une fois accepté aussi par ton/ta partenaire, il/elle aura les <b>pleins pouvoirs</b> :</p>
+      <ul><li>vibrations jusqu'à 100 %, sans plafond partenaire ni plafond de discrétion ;</li>
+      <li>Shock jusqu'à 100 %, jusqu'à 3 s, 1 s minimum entre deux${Equip.stim ? "" : " (si tu coches E-stim dans ton équipement)"} ;</li>
+      <li>armer, désarmer, changer d'app et toutes les actions des modes.</li></ul>
+      <p>Ce qui reste toujours à toi : le bouton <b>ARRÊT</b>, le « max % » de chaque appareil (Appareils), et ce réglage, que tu peux couper à tout moment.</p>
+      <p class="muted">Ce choix est enregistré : vous n'aurez pas à le refaire à chaque séance. Il est lié au code actuel (« Nouveau code » l'annule).</p>`,
+    check: "Je consens librement à donner ces pouvoirs à mon/ma partenaire",
+    ok: "Activer",
+  });
+  if (!ok) return;
+  P.msWearer = true; Partner.save(); log("👑 Mode Master/Sub proposé : en attente de l'accord du partenaire."); Partner.send(true); updateMs();
+};
+setInterval(updateMs, 1000);
+$("copyCode").onclick = async () => { try { await navigator.clipboard.writeText(P.code); $("copyCode").textContent = "Copié ✓"; } catch { $("copyCode").textContent = "Sélectionne le code"; } };
+$("shareCode").onclick = () => {
+  const txt = "Code BPlaysure (menu → Je contrôle) : " + P.code;
+  if (!nativeCall("share", txt)) { if (navigator.share) navigator.share({ text: txt }).catch(() => {}); else $("copyCode").onclick(); }
+};
+
+/* ---------------- Télécommande ---------------- */
+function fpIn(){ try { $("fpIn").textContent = Link.fingerprint($("codeIn").value); return true; } catch { $("fpIn").textContent = "—"; return false; } }
+$("codeIn").oninput = () => { Subs.cur.code = $("codeIn").value.trim(); Subs.save(); fpIn(); };
+$("brokerIn").onchange = () => { Subs.cur.broker = $("brokerIn").value; Subs.save(); };
+renderSubs();
+$("openRemote").onclick = () => {
+  if (!fpIn()) { $("fpIn").textContent = "code incomplet"; return; }
+  Subs.cur.code = $("codeIn").value.trim(); Subs.cur.broker = $("brokerIn").value; Subs.save();
+  store.set("bpRemoteCode", Subs.cur.code); store.set("bpRemoteBroker", Subs.cur.broker); store.set("bpRemoteName", Subs.cur.name);
+  location.href = "remote.html";
+};
+
+/* ---------------- État de la liaison ---------------- */
+/* Volet « Partenaire » repliable : replié automatiquement une fois la liaison établie */
+const pairOpen = store.get("open:menu:pair", null);
+if (pairOpen !== null) $("pairCard").open = pairOpen;
+$("pairCard").addEventListener("toggle", () => store.set("open:menu:pair", $("pairCard").open));
+function pairSummary(){
+  let t;
+  if (role === "none") t = "seul·e";
+  else if (role === "ctl") { let fp = "—"; try { fp = Link.fingerprint($("codeIn").value); } catch {} t = `je contrôle « ${Subs.cur.name} » · code ` + fp; }
+  else t = `je porte · ${Masters.cur.name} · ` + (Partner.ms ? "👑 Master/Sub · " : "") + (Partner.peerLive ? "connecté ✓" : Partner.status);
+  $("pairSum").textContent = t;
+  if (role === "wear" && Partner.peerLive && !store.get("bpPairedOnce", false)) {
+    store.set("bpPairedOnce", true);
+    if (store.get("open:menu:pair", null) === null) $("pairCard").open = false;   // 1re connexion réussie : on replie
+  }
+}
+setInterval(pairSummary, 700);
+
+function updateState(){
+  const el = $("partnerState");
+  el.classList.toggle("hidden", role !== "wear");
+  el.textContent = Partner.peerLive ? "🎮 partenaire connecté" : "🎮 " + Partner.status;
+  el.classList.toggle("on", Partner.peerLive);
+}
+Partner.onStatus = updateState;
+if (!Profiles.unlocked) Partner.cfg.enabled = false;   // profil verrouillé : aucune liaison avant le PIN (sans l'enregistrer)
+Partner.init("menu", { telemetry: () => ({ phase: "Au menu" }) });
+document.querySelectorAll("a.card").forEach(a => a.addEventListener("click", e => {
+  if (!Partner.started) return;
+  e.preventDefault(); Partner.nav(); setTimeout(() => { location.href = a.getAttribute("href"); }, 200);
+}));
+setInterval(updateState, 500);
+
+showCode(); refresh(); updateMs(); pairSummary();
+heroStats();
+setTab(store.get("bpMenuTab", role === "ctl" ? "partner" : "apps"));
+if (!showLock()) { savePerm(); setRole(role); }
+if (store.get("open:menu:pair", null) === null && (store.get("bpPairedOnce", false) || (role === "ctl" && fpIn()))) $("pairCard").open = false;
+$("envInfo").textContent = (NATIVE ? "Application Android" : "Navigateur") +
+  " · Bluetooth : " + (NATIVE || navigator.bluetooth ? "oui" : "non") +
+  " · Caméra : " + (navigator.mediaDevices ? "oui" : "non") +
+  " · Capteurs : " + (typeof DeviceMotionEvent !== "undefined" ? "oui" : "non");
+if (!NATIVE && "serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+Update.init();
+</script>
+</body>
+</html>

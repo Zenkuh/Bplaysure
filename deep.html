@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Blow Trainer</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .camWrap{position:relative}
+  .camWrap video{max-height:none}
+  #overlay{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+  #swatch{display:inline-block;width:26px;height:26px;border-radius:7px;border:1px solid var(--line);vertical-align:middle}
+  /* source « pression » : écran tactile plein écran (nez / front) */
+  #pressPad{position:fixed;inset:0;padding-top:var(--topH,0px);z-index:9;background:#07070b;touch-action:none;user-select:none;-webkit-user-select:none;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#888;transition:background .12s}
+  #pressPad.on{background:radial-gradient(circle at 50% 55%,#5a1f8a,#16081f 70%)}
+  #pressPad .pTop{position:absolute;left:0;right:0;top:calc(10px + env(safe-area-inset-top));display:flex;justify-content:space-between;align-items:center;padding:0 12px;pointer-events:none}
+  #pressPad .pPh{font:800 18px system-ui;color:#ddd}
+  #pressPad .pSt{font:600 14px system-ui;color:#aaa;text-align:right}
+  #pressPad .pBig{font:900 72px system-ui;color:#c77dff;pointer-events:none}
+  #pressPad.on .pBig{color:#fff}
+  #pressPad .pHint{font:700 18px system-ui;color:#777;pointer-events:none;margin-top:6px;text-align:center;padding:0 24px}
+  #pressPad.on .pHint{color:#eee}
+  #pressPad .pRing{position:absolute;width:62vmin;height:62vmin;border-radius:50%;border:3px dashed #ffffff22;pointer-events:none}
+  #pressPad.on .pRing{border:3px solid #ffffffaa;box-shadow:0 0 40px #c77dff}
+  #pStop{position:absolute;left:12px;bottom:calc(12px + env(safe-area-inset-bottom));min-height:42px;padding:0 16px;border-radius:14px;border:0;background:#2a2a33;color:#fff;font-weight:800;display:none}
+  #pressPad.test #pStop{display:block}
+  #pressPad.test{top:0;z-index:9000}
+  #pressPad .pTop{display:none}
+  #pressPad.test .pTop{display:flex}
+  body:not([data-apptab="play"]) #pressPad:not(.test){display:none}
+  nav.actions{z-index:12}
+  body.pressOn[data-apptab="play"] main{visibility:hidden}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Blow Trainer</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="phase">En attente</div>
+    <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+      <div>Score<b id="score">0</b></div>
+      <div>Fois à 100 %<b id="reachN">0</b></div>
+      <div>Record<b id="bestDepth">0 %</b></div>
+      <div>Maintien max<b id="bestHold">0.0 s</b></div>
+    </div>
+    <div class="stat"><span>Profondeur</span><div class="meter" id="depthMeter"><div id="depthBar" class="accC"></div><div id="tgtMark" class="mark tgt hidden"></div></div><span id="depthVal">—</span></div>
+    <div class="stat"><span>Maintien</span><div class="meter"><div id="holdBar" class="warnC"></div></div><span id="holdVal">0.0 s</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <canvas id="spark" class="spark" width="600" height="80"></canvas>
+    <div class="chips"><span>Série <b id="setInfo">—</b></span><span>Inactivité <b id="idleT">0.0</b> s</span><span id="syncChip" class="hidden">Synchro <b id="syncV">—</b></span><span data-need="stim">Shocks <b id="stimN">0</b></span><span>Temps <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secMeasure" open>
+    <summary>📏 Mesure & calibration <small id="srcSum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Source</span>
+        <select id="source">
+          <option value="lips" data-need="cam">💋 Bouche IA : sur ton/ta partenaire ou un gode (caméra)</option>
+          <option value="toy" data-need="cam">🍆 Gode coloré : partie visible (caméra)</option>
+          <option value="camera" data-need="cam">🎯 Repère coloré sur le visage (caméra)</option>
+          <option value="tilt" data-need="gyro">Inclinaison du téléphone</option>
+          <option value="serial">Capteur USB (PC)</option>
+          <option value="press">👃 Pression sur l'écran : nez ou front (plein écran)</option>
+          <option value="sim">Simulation (test)</option>
+        </select>
+      </label>
+      <div id="camPanel">
+        <div class="row">
+          <select id="facing"><option value="user">Caméra avant</option><option value="environment">Caméra arrière</option></select>
+          <button id="camBtn">Démarrer la caméra</button>
+        </div>
+        <div class="camWrap"><video id="video" autoplay playsinline muted></video><canvas id="overlay"></canvas></div>
+        <p class="muted" id="camHelp"></p>
+        <div id="lipsOpts">
+          <label class="f"><span>Suivre une pastille de couleur à la base (le partenaire peut bouger)</span><input id="useBase" type="checkbox"></label>
+        </div>
+        <div id="colorOpts">
+          <p class="muted">Couleur suivie : <span id="swatch"></span> <span id="pixInfo"></span></p>
+          <label class="f"><span>Tolérance couleur</span><input id="colTol" type="range" min="10" max="120" value="45"></label>
+        </div>
+      </div>
+      <div id="tiltPanel">
+        <div class="row"><button id="gyroBtn">Activer les capteurs</button><span class="muted">angle <b id="tiltRaw">—</b></span></div>
+        <p class="muted">Fixe le téléphone sur ta tête (bandeau, casquette). L'inclinaison entre la position 0 % et la position 100 % donne la profondeur.</p>
+      </div>
+      <div id="serialPanel">
+        <div class="row"><button id="serialBtn">Connecter le capteur</button><span class="muted">valeur <b id="rawVal">—</b></span></div>
+        <label class="f"><span>Débit (baud)</span><input id="baud" type="number" value="115200"></label>
+        <p class="muted">Chrome/Edge sur ordinateur uniquement.</p>
+      </div>
+      <div id="pressPanel">
+        <p class="muted">Pas de caméra : pendant la séance, l'écran entier devient une zone tactile. Pose le téléphone à plat devant toi (ou contre le gode) et viens toucher l'écran avec le <b>nez</b> ou le <b>front</b> : contact = profondeur <b>100 %</b>, pas de contact = 0 %. Cette source ne mesure pas l'entre-deux, seulement la réussite de la profondeur. Aucune calibration nécessaire.</p>
+        <label class="f"><span>Contact maintenu malgré une micro-coupure (ms)</span><input id="pressHold" type="number" min="0" max="600" step="10" value="150"></label>
+        <div class="row"><button id="pressTest">🖐️ Tester l'écran tactile</button></div>
+      </div>
+      <div id="simPanel">
+        <label class="f"><span>Profondeur simulée</span><input id="simVal" type="range" min="0" max="110" value="0"></label>
+      </div>
+      <div class="row">
+        <button id="cal0">Calibrer 0 %</button>
+        <button id="cal1">Calibrer 100 %</button>
+      </div>
+      <p class="muted">0 % = lèvres au bout, 100 % = ton objectif (dépassable jusqu'à 120 %).</p>
+      <label class="f"><span>Lissage</span><input id="smooth" type="range" min="0" max="90" value="40"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secProgram">
+    <summary>⏱️ Programme & respiration</summary>
+    <div class="body">
+      <label class="f"><span>Maintien profond max avant « Respire » (s)</span><input id="holdMax" data-local type="number" min="2" max="60" value="10"></label>
+      <label class="f"><span>Pause respiration imposée (s)</span><input id="breathS" data-local type="number" min="2" max="60" value="5"></label>
+      <label class="f"><span>Durée d'une série (s)</span><input id="workS" type="number" min="15" max="1800" value="120"></label>
+      <label class="f"><span>Repos entre séries (s)</span><input id="restS" type="number" min="0" max="600" value="45"></label>
+      <label class="f"><span>Nombre de séries</span><input id="sets" type="number" min="1" max="30" value="4"></label>
+      <label class="f"><span>Signaux sonores</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Consignes vocales (respire, compte des 100 %…)</span><input id="voice" type="checkbox" checked></label>
+    </div>
+  </details>
+
+  <details class="card" id="secPoints">
+    <summary>🏆 Points & récompense</summary>
+    <div class="body">
+      <label class="f"><span>Seuil « profond » (%)</span><input id="deepThr" type="number" min="10" max="120" value="80"></label>
+      <label class="f"><span>Points / s × profondeur</span><input id="ptsDepth" type="number" min="0" max="100" value="1"></label>
+      <label class="f"><span>Bonus maintien profond (pts/s, croissant)</span><input id="ptsHold" type="number" min="0" max="500" value="20"></label>
+      <label class="f"><span>Bonus nouveau record</span><input id="ptsRecord" type="number" min="0" max="1000" value="100"></label>
+      <label class="f"><span>Compté « 100 % » à partir de (%)</span><input id="reachThr" type="number" min="50" max="120" value="100"></label>
+      <label class="f"><span>Redescendre sous (%) pour compter le suivant</span><input id="reachReset" type="number" min="0" max="110" value="70"></label>
+      <label class="f"><span>Points par 100 % atteint</span><input id="ptsReach" type="number" min="0" max="1000" value="50"></label>
+      <div data-need="vib">
+        <label class="f"><span>Vibration selon profondeur (max %)</span><input id="vibDepth" type="number" min="0" max="100" value="50"></label>
+        <label class="f"><span>+ vibration par s de maintien (%)</span><input id="vibHold" type="number" min="0" max="50" value="8"></label>
+        <label class="f"><span>Vibration au repos (%)</span><input id="vibBase" type="number" min="0" max="100" value="0"></label>
+        <label class="f"><span>Récompense à chaque 100 % : vibration (%)</span><input id="vibReach" type="number" min="0" max="100" value="60"></label>
+        <label class="f"><span>Bonus vibration quand tu suis le rythme (%)</span><input id="vibSync" type="number" min="0" max="100" value="20"></label>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secRhythm">
+    <summary>🥁 Guide de rythme <small id="rhySum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Activer le guide (un repère mobile à suivre)</span><input id="guideOn" type="checkbox"></label>
+      <label class="f"><span>Allers-retours par minute</span><input id="guideBpm" type="number" min="5" max="120" value="30"></label>
+      <label class="f"><span>Accélération à chaque série (+/min)</span><input id="guideRamp" type="number" min="0" max="40" value="5"></label>
+      <label class="f"><span>Profondeur basse du guide (%)</span><input id="guideLow" type="number" min="0" max="100" value="20"></label>
+      <label class="f"><span>Profondeur haute du guide (%)</span><input id="guideHigh" type="number" min="10" max="120" value="100"></label>
+      <label class="f"><span>Points / s quand tu suis parfaitement</span><input id="ptsSync" type="number" min="0" max="200" value="10"></label>
+      <label class="f"><span>Métronome (bip en bas de chaque aller-retour)</span><input id="guideTick" type="checkbox" checked></label>
+      <p class="muted">Le repère jaune sur la jauge de profondeur et la courbe pointillée montrent où être. La synchro compte l'écart entre ta profondeur et le repère.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Inactivité → shock</summary>
+    <div class="body">
+      <label class="f"><span>Seuil « trop peu profond » (%)</span><input id="lowThr" type="number" min="0" max="100" value="25"></label>
+      <label class="f"><span>Temps toléré sous ce seuil (s)</span><input id="idleMax" type="number" min="2" max="120" value="8"></label>
+      <label class="f"><span>Intensité shock (%)</span><input id="stimLvl" type="number" min="0" max="100" value="12"></label>
+      <label class="f"><span>Durée de l'impulsion (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="500"></label>
+      <label class="f"><span>Escalade (+% par shock consécutif)</span><input id="stimEsc" type="number" min="0" max="20" value="2"></label>
+      <label class="f"><span>Pause entre deux shocks (s)</span><input id="stimCd" type="number" min="2" max="60" value="5"></label>
+      <p class="muted">Jamais de shock au-dessus du seuil bas, sans mesure valide, ni pendant les pauses respiration et les repos.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="25"></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<div id="pressPad" class="hidden">
+  <div class="pTop"><span class="pPh" id="pPh"></span><span class="pSt" id="pSt"></span></div>
+  <div class="pRing"></div>
+  <div class="pBig" id="pBig">0</div>
+  <div class="pHint" id="pHint">Touche l'écran avec le nez ou le front</div>
+  <button id="pStop">ARRÊT</button>
+</div>
+
+<nav class="actions">
+  <button id="arm">Démarrer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="face.js"></script>
+<script>
+"use strict";
+/* ====================================================================
+ * Caméra : suivi d'un repère coloré
+ * ==================================================================== */
+const CW = 160, CH = 120;
+const work = document.createElement("canvas"); work.width = CW; work.height = CH;
+const wctx = work.getContext("2d", { willReadFrequently: true });
+const ov = $("overlay"), octx = ov.getContext("2d");
+let stream = null, target = null, markerPos = null;
+
+async function camToggle(){
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; $("video").srcObject = null; $("camBtn").textContent = "Démarrer la caméra"; return; }
+  try { stream = await openCamera($("video"), $("facing").value); $("camBtn").textContent = "Arrêter la caméra"; log("Caméra démarrée. Touche ton repère coloré dans l'image."); }
+  catch (e) { log("Caméra : " + e.message); }
+}
+$("camBtn").onclick = camToggle;
+$("facing").onchange = async () => { if (stream) { await camToggle(); await camToggle(); } };
+
+ov.addEventListener("pointerdown", e => {
+  if (!stream) return;
+  const r = ov.getBoundingClientRect();
+  const x = Math.floor((e.clientX - r.left) / r.width * CW), y = Math.floor((e.clientY - r.top) / r.height * CH);
+  wctx.drawImage($("video"), 0, 0, CW, CH);
+  const d = wctx.getImageData(clamp(x - 2, 0, CW - 5), clamp(y - 2, 0, CH - 5), 5, 5).data;
+  let R = 0, G = 0, B = 0; for (let i = 0; i < d.length; i += 4) { R += d[i]; G += d[i + 1]; B += d[i + 2]; }
+  target = [R / 25, G / 25, B / 25];
+  $("swatch").style.background = `rgb(${target.map(Math.round).join(",")})`;
+  log("Couleur suivie : rgb(" + target.map(Math.round).join(", ") + ")");
+});
+function trackMarker(){
+  const v = $("video");
+  if (!stream || v.readyState < 2 || !target) return null;
+  wctx.drawImage(v, 0, 0, CW, CH);
+  const d = wctx.getImageData(0, 0, CW, CH).data, tol = num("colTol");
+  const ts = target[0] + target[1] + target[2] + 1, tr = target[0] / ts, tg = target[1] / ts;
+  let sx = 0, sy = 0, n = 0;
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    const s = d[i] + d[i + 1] + d[i + 2] + 1;
+    const dc = (Math.abs(d[i] / s - tr) + Math.abs(d[i + 1] / s - tg)) * 600 + Math.abs(s - ts) / 6;
+    if (dc < tol) { sx += p % CW; sy += (p / CW) | 0; n++; }
+  }
+  return { x: n ? sx / n : null, y: n ? sy / n : null, n, ok: n >= 6 };
+}
+const CAM_HELP = {
+  lips: "💋 L'IA suit ta bouche : pas besoin de repère. Place la caméra de côté (¾ profil), visage entier visible. Calibre 0 % lèvres au bout (gland ou bout du gode), puis 100 % à la profondeur visée. Avec un·e partenaire qui bouge, colle une pastille de couleur vive à la base (pubis) et coche l'option : <b>touche-la</b> dans l'image.",
+  toy: "🍆 Gode de couleur vive et unie, fixé (ventouse), caméra immobile qui le voit en entier. <b>Touche le gode</b> dans l'image. Plus il disparaît, plus c'est profond : calibre 0 % quand il est entièrement visible, puis 100 % à la profondeur visée.",
+  camera: "🎯 Caméra de profil, colle un repère de couleur vive sur ta joue ou ton front puis <b>touche-le</b> dans l'image.",
+};
+
+/* ====================================================================
+ * Inclinaison (gyroscope/accéléromètre)
+ * ==================================================================== */
+$("gyroBtn").onclick = async () => {
+  if (Gyro.on) { Gyro.stop(); $("gyroBtn").textContent = "Activer les capteurs"; return; }
+  try { await Gyro.start(); $("gyroBtn").textContent = "Désactiver les capteurs"; log("Capteurs d'inclinaison activés."); }
+  catch (e) { log(e.message); }
+};
+const angle = (a, b) => Math.acos(clamp(a[0] * b[0] + a[1] * b[1] + a[2] * b[2], -1, 1)) * 180 / Math.PI;
+
+/* ====================================================================
+ * Série USB (ordinateur uniquement)
+ * ==================================================================== */
+let serialRaw = null, serialLast = 0;
+if (!navigator.serial) { const o = $("source").querySelector('option[value="serial"]'); o.disabled = true; o.hidden = true; }
+$("serialBtn").onclick = async () => {
+  if (!navigator.serial) return log("Port série web indisponible ici (Chrome/Edge sur ordinateur uniquement).");
+  try {
+    const port = await navigator.serial.requestPort(); await port.open({ baudRate: num("baud") });
+    log("Capteur série connecté.");
+    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader(); let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += value; const lines = buf.split(/\r?\n/); buf = lines.pop();
+      for (const l of lines) { const v = parseFloat(l); if (!isNaN(v)) { serialRaw = v; serialLast = Date.now(); } }
+    }
+  } catch (e) { log("Série : " + e.message); }
+};
+
+/* ====================================================================
+ * Calibration → profondeur
+ * ==================================================================== */
+let cal = { cam0: null, cam1: null, ser0: null, ser1: null, tilt0: null, tilt1: null, toy0: null, toy1: null, lip0: null, lip1: null };
+let face = null, mouthPos = null, basePos = null;
+function rawSample(){
+  const src = $("source").value;
+  if (src === "camera") { const m = trackMarker(); markerPos = m && m.ok ? m : null; return markerPos; }
+  if (src === "toy") { const m = trackMarker(); markerPos = m && m.ok ? m : null; if (m) $("pixInfo").textContent = "· " + m.n + " px visibles"; return m ? m.n : null; }
+  if (src === "lips") {
+    face = FaceAI.detect($("video")); mouthPos = face ? (p => ({ x: p.x * CW, y: p.y * CH }))(FaceAI.mouth(face)) : null;
+    basePos = null;
+    if ($("useBase").checked) { const b = trackMarker(); basePos = b && b.ok ? b : null; if (!basePos) return null; }
+    if (!mouthPos) return null;
+    return basePos ? { x: mouthPos.x - basePos.x, y: mouthPos.y - basePos.y } : mouthPos;
+  }
+  if (src === "tilt") return Gyro.tilt();
+  if (src === "serial") return Date.now() - serialLast < 1000 ? serialRaw : null;
+  if (src === "press") return Press.down() ? 100 : 0;
+  return num("simVal");
+}
+function rawToDepth(raw){
+  const src = $("source").value;
+  if (raw == null) return null;
+  if (src === "sim" || src === "press") return raw;
+  if (src === "toy") {
+    if (cal.toy0 == null || cal.toy1 == null || cal.toy0 - cal.toy1 < 5) return null;
+    return (cal.toy0 - raw) / (cal.toy0 - cal.toy1) * 100;
+  }
+  if (src === "serial") {
+    if (cal.ser0 == null || cal.ser1 == null || cal.ser0 === cal.ser1) return null;
+    return (raw - cal.ser0) / (cal.ser1 - cal.ser0) * 100;
+  }
+  if (src === "tilt") {
+    if (!cal.tilt0 || !cal.tilt1) return null;
+    const full = angle(cal.tilt0, cal.tilt1); if (full < 3) return null;
+    const a = angle(cal.tilt0, raw); $("tiltRaw").textContent = a.toFixed(1) + "°";
+    // signe : si on s'éloigne plus de la position 100 % que 0 % ne l'est, on est « avant » 0
+    const sign = angle(cal.tilt1, raw) > full && a > 0 && angle(cal.tilt1, raw) > a ? -1 : 1;
+    return sign * a / full * 100;
+  }
+  const c0 = src === "lips" ? cal.lip0 : cal.cam0, c1 = src === "lips" ? cal.lip1 : cal.cam1;
+  if (!c0 || !c1 || !!c0.rel !== !!c1.rel || !!c0.rel !== (src === "lips" && $("useBase").checked)) return null;
+  const vx = c1.x - c0.x, vy = c1.y - c0.y, L2 = vx * vx + vy * vy;
+  if (L2 < 4) return null;
+  return ((raw.x - c0.x) * vx + (raw.y - c0.y) * vy) / L2 * 100;
+}
+function calibrate(which){
+  const raw = rawSample();
+  if (raw == null) return log("Pas de mesure valide pour calibrer (repère non détecté / capteur muet).");
+  const src = $("source").value;
+  if (src === "camera") cal[which ? "cam1" : "cam0"] = { x: raw.x, y: raw.y };
+  else if (src === "lips") cal[which ? "lip1" : "lip0"] = { x: raw.x, y: raw.y, rel: $("useBase").checked };
+  else if (src === "toy") {
+    if (!which && raw < 20) return log("Gode à peine visible : touche-le dans l'image (couleur) et vérifie qu'il est entièrement visible.");
+    cal[which ? "toy1" : "toy0"] = raw;
+  }
+  else if (src === "serial") cal[which ? "ser1" : "ser0"] = raw;
+  else if (src === "tilt") cal[which ? "tilt1" : "tilt0"] = raw.slice();
+  log(`Calibration ${which ? "100 %" : "0 %"} enregistrée.`); beep(which ? 1100 : 660);
+}
+$("cal0").onclick = () => calibrate(0);
+$("cal1").onclick = () => calibrate(1);
+function updateSourceUI(){
+  const s = $("source").value;
+  $("srcSum").textContent = $("source").options[$("source").selectedIndex].text;
+  const cam = s === "camera" || s === "toy" || s === "lips";
+  $("camPanel").classList.toggle("hidden", !cam);
+  if (cam) $("camHelp").innerHTML = CAM_HELP[s];
+  $("lipsOpts").classList.toggle("hidden", s !== "lips");
+  $("colorOpts").classList.toggle("hidden", !(s === "camera" || s === "toy" || (s === "lips" && $("useBase").checked)));
+  $("pixInfo").textContent = "";
+  if (s === "lips" && FaceAI.state === "off") {
+    log("Chargement de l'IA visage…");
+    FaceAI.load().then(ok => log(ok ? "IA visage prête : démarre la caméra, puis calibre 0 % et 100 %." : "⚠ IA visage indisponible dans cette version (" + FaceAI.err + ") : utilise « gode coloré » ou « repère coloré »."));
+  }
+  $("tiltPanel").classList.toggle("hidden", s !== "tilt");
+  $("serialPanel").classList.toggle("hidden", s !== "serial");
+  $("simPanel").classList.toggle("hidden", s !== "sim");
+  $("pressPanel").classList.toggle("hidden", s !== "press");
+  document.querySelectorAll("#cal0,#cal1").forEach(b => b.closest(".row").classList.toggle("hidden", s === "press"));
+  if (s !== "press" && Press.testing) Press.show(false);
+}
+$("source").onchange = updateSourceUI;
+$("useBase").onchange = updateSourceUI;
+
+/* ====================================================================
+ * Source « pression » : tout l'écran est une zone tactile (nez / front)
+ * contact = 100 %, sinon 0 % ; une micro-coupure (peau qui glisse) est tolérée
+ * ==================================================================== */
+const Press = {
+  ptr: new Set(), lastUp: 0, testing: false, on: false,
+  down(){ return this.ptr.size > 0 || Date.now() - this.lastUp < num("pressHold"); },
+  show(on, test = false){
+    this.on = on; this.testing = on && test;
+    $("pressPad").classList.toggle("hidden", !on);
+    if (!on) { this.ptr.clear(); }
+    // pas de plein écran Android : le monitoring et Armer / ARRÊT restent visibles au-dessus
+    $("pressPad").classList.toggle("test", this.testing);
+    // pendant la séance : le reste de la page est masqué (rien ne peut réapparaître derrière la zone tactile)
+    document.body.classList.toggle("pressOn", on && !this.testing);
+    $("pStop").textContent = "Fermer le test";
+  },
+};
+$("pressPad").addEventListener("pointerdown", e => { if (e.target.id === "pStop") return; e.preventDefault(); Press.ptr.add(e.pointerId); });
+["pointerup", "pointercancel", "pointerleave"].forEach(ev => $("pressPad").addEventListener(ev, e => { if (Press.ptr.delete(e.pointerId) && !Press.ptr.size) Press.lastUp = Date.now(); }));
+$("pressPad").addEventListener("contextmenu", e => e.preventDefault());
+$("pStop").onclick = () => { if (Press.testing) Press.show(false); else emergencyStop(); };
+$("pressTest").onclick = () => Press.show(true, true);
+function pressDraw(){
+  if (!Press.on) return;
+  const dn = Press.down();
+  $("pressPad").classList.toggle("on", dn);
+  $("pBig").textContent = Press.testing ? (dn ? "100 %" : "0 %") : reachN;
+  $("pHint").textContent = dn ? (Press.testing ? "Contact détecté ✅" : "Tiens… " + holdT.toFixed(1) + " s") : "Touche l'écran avec le nez ou le front";
+  $("pPh").textContent = Press.testing ? "Test de l'écran" : $("phase").textContent;
+  $("pSt").textContent = Press.testing ? "" : `${reachN} × 100 % · score ${Math.round(score)}`;
+}
+
+/* ====================================================================
+ * Séance : WORK / BREATH / REST / DONE
+ * ==================================================================== */
+let deepTot = 0;   // secondes cumulées au-delà du seuil profond (défi de carrière)
+let reachN = 0, reachArmed = true, vibBoostUntil = 0;              // compteur de « 100 % »
+let gPhase = 0, gTgt = null, sync = 0, syncLowSince = 0;           // guide de rythme
+let phase = "IDLE", phaseSince = 0, armedAt = 0, setNo = 0;
+let depth = 0, depthValid = false, score = 0, bestDepth = 0, bestHold = 0, holdT = 0, idleT = 0;
+let workT = 0, lostWarned = false, stimCount = 0, consecStims = 0, lastStimAt = 0, stimTimer = null, curVib = 0, curStim = 0, lastRecordBeep = 0;
+const hist = [];
+const PH = { IDLE: "En attente", WORK: "À toi 💜", BREATH: "Respire !", REST: "Repos", DONE: "Séance terminée" };
+
+function setPhase(p){
+  phase = p; phaseSince = Date.now();
+  $("phase").textContent = PH[p] + (p === "WORK" || p === "REST" ? ` — série ${setNo}/${num("sets")}` : "");
+  if (p !== "WORK") { Sched.cancel(stimTimer); curStim = sendLevel("stim", 0, true); }
+  if (p === "BREATH") { beep(440, 300, 2); Speak.say("Respire"); }
+  if (p === "WORK") { beep(880, 120, 2); if (App.armed) Speak.say(setNo > 1 ? "Série " + setNo : "À toi"); }
+  if (p === "REST") { beep(600, 400, 1); Speak.say("Repos"); }
+  if (p === "DONE") { beep(600, 400, 1); Speak.say("Séance terminée. " + reachN + " fois à cent pour cent"); }
+}
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "EN COURS" : "Démarrer";
+  if (on) {
+    score = 0; holdT = 0; idleT = 0; workT = 0; stimCount = 0; consecStims = 0; setNo = 1; armedAt = Date.now(); lastStimAt = 0; deepTot = 0;
+    reachN = 0; reachArmed = true; vibBoostUntil = 0; gPhase = 0; sync = 0; syncLowSince = 0;
+    log("Séance démarrée."); Game.start(); setPhase("WORK");
+    if ($("source").value === "press") Press.show(true);
+  } else {
+    if (Game.run) { Game.xp(score / 10); Game.end(); }
+    Sched.cancel(stimTimer); curVib = sendLevel("vib", 0, true); curStim = sendLevel("stim", 0, true);
+    if (phase !== "DONE") setPhase("IDLE");
+    if (Press.on && !Press.testing) Press.show(false);
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT D'URGENCE"); }
+
+function firePulse(){
+  const lvl = num("stimLvl") + consecStims * num("stimEsc");
+  const dur = clamp(num("pulseMs"), 100, 2000);
+  curStim = sendLevel("stim", lvl, true); stimCount++; consecStims++; lastStimAt = Date.now();
+  log(`Shock ${Math.min(lvl, num("maxStim"))} % (${dur} ms) — inactivité`);
+  Sched.cancel(stimTimer); stimTimer = Sched.after(dur, () => { curStim = sendLevel("stim", 0, true); });
+}
+
+const guideBpm = () => clamp(num("guideBpm") + Math.max(0, setNo - 1) * num("guideRamp"), 5, 150);
+let lastTick = performance.now();
+function tick(){
+  const now = performance.now(), dt = Math.min(0.5, (now - lastTick) / 1000); lastTick = now;
+  const d = rawToDepth(rawSample());
+  depthValid = d != null;
+  if (depthValid) { const a = $("source").value === "press" ? 0 : num("smooth") / 100; depth = a * depth + (1 - a) * clamp(d, 0, 120); }
+  const t = Date.now(), el = (t - phaseSince) / 1000;
+
+  if (App.armed && !App.suspended) {
+    if (phase === "WORK") {
+      workT += dt;
+      const deep = depthValid && depth >= num("deepThr");
+      if (depthValid) score += num("ptsDepth") * depth / 100 * dt * 10;
+      if (deep) { holdT += dt; deepTot += dt; score += num("ptsHold") * (1 + holdT / 5) * dt; } else holdT = 0;
+      // compteur de « 100 % » (il faut redescendre sous le seuil de remise à zéro pour compter le suivant)
+      if (depthValid && reachArmed && depth >= num("reachThr")) {
+        reachArmed = false; reachN++; score += num("ptsReach"); vibBoostUntil = t + 700;
+        beep(1175, 70); Speak.say(String(reachN), "reach");
+      } else if (depthValid && !reachArmed && depth < Math.min(num("reachReset"), num("reachThr") - 5)) reachArmed = true;
+      // guide de rythme
+      if ($("guideOn").checked) {
+        const prevN = Math.floor(gPhase); gPhase += dt * guideBpm() / 60;
+        const lo = num("guideLow"), hi = Math.max(lo + 5, num("guideHigh"));
+        gTgt = lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * gPhase));
+        if (Math.floor(gPhase) !== prevN && $("guideTick").checked) beep(520, 50);
+        const sc = depthValid ? clamp(1 - Math.abs(depth - gTgt) / 35, 0, 1) : 0;
+        sync = sync * 0.95 + sc * 0.05; score += num("ptsSync") * sc * dt;
+        if (sync < 0.3) { if (!syncLowSince) syncLowSince = t; else if (t - syncLowSince > 6000) { Speak.say("Suis le rythme", "sync", 12000); syncLowSince = t; } } else syncLowSince = 0;
+      } else gTgt = null;
+      if (Game.run) { Game.progress(deepTot); if (Game.run) Game.progress(reachN, "reach"); }
+      if (depthValid && depth > bestDepth + 0.5) {
+        if (bestDepth > 0 && t - lastRecordBeep > 3000) { score += num("ptsRecord"); beep(1320, 90, 3); log(`Nouveau record de profondeur : ${depth.toFixed(0)} %`); lastRecordBeep = t; }
+        bestDepth = depth;
+      }
+      if (holdT > bestHold) bestHold = holdT;
+      let vib = depthValid ? num("vibBase") + num("vibDepth") * clamp(depth, 0, 100) / 100 + (deep ? holdT * num("vibHold") : 0) : num("vibBase");
+      if (gTgt != null) vib += num("vibSync") * sync;
+      if (t < vibBoostUntil) vib = Math.max(vib, num("vibReach"));
+      curVib = sendLevel("vib", vib);
+      if (holdT >= num("holdMax")) { log(`Maintien de ${holdT.toFixed(1)} s → pause respiration.`); holdT = 0; setPhase("BREATH"); }
+      else {
+        if (!depthValid || depth < num("lowThr")) idleT += dt; else { idleT = 0; consecStims = 0; }
+        if (idleT >= num("idleMax") - 3 && idleT < num("idleMax")) Speak.say("Plus profond", "deeper", 8000);
+        if (Equip.stim && depthValid && idleT >= num("idleMax") && depth < num("lowThr") && t - lastStimAt >= num("stimCd") * 1000) firePulse();
+        if (!depthValid && !lostWarned) { lostWarned = true; log("⚠ Mesure perdue : aucun shock n'est envoyé sans mesure valide."); }
+        if (depthValid) lostWarned = false;
+      }
+      if (workT >= num("workS")) {
+        if (setNo >= num("sets")) {
+          setPhase("DONE"); log(`Séance terminée — score ${Math.round(score)}.`);
+          if (Game.run && !Game.run.reached) { Game.xp(score / 10); Game.fail(Game.progText()); }
+          setArmed(false);
+        }
+        else if (num("restS") > 0) setPhase("REST"); else { setNo++; workT = 0; setPhase("WORK"); }
+      }
+    } else if (phase === "BREATH") {
+      gTgt = null;
+      curVib = sendLevel("vib", num("vibBase")); idleT = 0;
+      if (el >= num("breathS")) setPhase("WORK");
+    } else if (phase === "REST") {
+      gTgt = null;
+      curVib = sendLevel("vib", 0); idleT = 0; holdT = 0;
+      if (el >= num("restS")) { setNo++; workT = 0; setPhase("WORK"); }
+    }
+  }
+  if (!App.armed) gTgt = null;
+  hist.push({ t, d: depthValid ? depth : null, g: gTgt }); while (hist.length && t - hist[0].t > 60000) hist.shift();
+  draw();
+}
+
+/* ====================================================================
+ * Affichage
+ * ==================================================================== */
+const spark = $("spark"), sctx = spark.getContext("2d");
+function draw(){
+  pressDraw();
+  const dp = depthValid ? depth : 0;
+  $("depthBar").style.width = clamp(dp / 1.2, 0, 100) + "%"; $("depthVal").textContent = depthValid ? dp.toFixed(0) + " %" : "—";
+  $("holdBar").style.width = clamp(holdT / Math.max(1, num("holdMax")) * 100, 0, 100) + "%"; $("holdVal").textContent = holdT.toFixed(1) + " s";
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimBar").style.width = curStim + "%"; $("stimVal").textContent = curStim.toFixed(0);
+  $("score").textContent = Math.round(score); $("bestDepth").textContent = bestDepth.toFixed(0) + " %"; $("bestHold").textContent = bestHold.toFixed(1) + " s";
+  $("idleT").textContent = idleT.toFixed(1); $("stimN").textContent = stimCount; $("reachN").textContent = reachN;
+  $("tgtMark").classList.toggle("hidden", gTgt == null); if (gTgt != null) $("tgtMark").style.left = clamp(gTgt / 1.2, 0, 100) + "%";
+  $("syncChip").classList.toggle("hidden", !$("guideOn").checked); $("syncV").textContent = Math.round(sync * 100) + " %";
+  $("rhySum").textContent = $("guideOn").checked ? guideBpm() + " /min" : "désactivé";
+  $("setInfo").textContent = App.armed ? `${setNo}/${num("sets")}` : "—";
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0;
+  $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  if ($("source").value === "serial") $("rawVal").textContent = serialRaw ?? "—";
+  const m = $("depthMeter"); m.querySelectorAll(".mark:not(.tgt)").forEach(e => e.remove());
+  [num("lowThr"), num("deepThr"), num("reachThr")].forEach(x => { const k = document.createElement("div"); k.className = "mark"; k.style.left = clamp(x / 1.2, 0, 100) + "%"; m.appendChild(k); });
+  const W = spark.width, H = spark.height, now = Date.now();
+  sctx.clearRect(0, 0, W, H);
+  [[num("lowThr"), "#ff6b6b66"], [num("deepThr"), "#ffb70366"]].forEach(([v, c]) => { const y = H - v / 120 * H; sctx.strokeStyle = c; sctx.lineWidth = 1; sctx.beginPath(); sctx.moveTo(0, y); sctx.lineTo(W, y); sctx.stroke(); });
+  sctx.strokeStyle = "#ffd166aa"; sctx.lineWidth = 2; sctx.setLineDash([5, 4]); sctx.beginPath(); let sg = false;
+  for (const p of hist) { if (p.g == null) { sg = false; continue; } const x = W - (now - p.t) / 60000 * W, y = H - p.g / 120 * H; sg ? sctx.lineTo(x, y) : sctx.moveTo(x, y); sg = true; }
+  sctx.stroke(); sctx.setLineDash([]);
+  sctx.strokeStyle = "#c77dff"; sctx.lineWidth = 2; sctx.beginPath(); let st = false;
+  for (const p of hist) { if (p.d == null) { st = false; continue; } const x = W - (now - p.t) / 60000 * W, y = H - p.d / 120 * H; st ? sctx.lineTo(x, y) : sctx.moveTo(x, y); st = true; }
+  sctx.stroke();
+  const src = $("source").value;
+  if (src === "camera" || src === "lips" || src === "toy") {
+    if (ov.width !== ov.clientWidth || ov.height !== ov.clientHeight) { ov.width = ov.clientWidth; ov.height = ov.clientHeight; }
+    const sx = ov.width / CW, sy = ov.height / CH;
+    octx.clearRect(0, 0, ov.width, ov.height); octx.font = "12px system-ui";
+    if (src === "toy") {
+      if (markerPos) { octx.strokeStyle = "#52d273"; octx.lineWidth = 2; octx.beginPath(); octx.arc(markerPos.x * sx, markerPos.y * sy, 10, 0, 7); octx.stroke(); }
+    } else {
+      const c0 = src === "lips" ? cal.lip0 : cal.cam0, c1 = src === "lips" ? cal.lip1 : cal.cam1;
+      const off = src === "lips" && basePos && c0 && c0.rel ? basePos : { x: 0, y: 0 };   // calibration relative à la pastille de base
+      if (c0 && c1) { octx.strokeStyle = "#ffffffaa"; octx.lineWidth = 1; octx.setLineDash([6, 4]); octx.beginPath(); octx.moveTo((c0.x + off.x) * sx, (c0.y + off.y) * sy); octx.lineTo((c1.x + off.x) * sx, (c1.y + off.y) * sy); octx.stroke(); octx.setLineDash([]); }
+      [[c0, "#4cc9f0", "0"], [c1, "#ffb703", "100"]].forEach(([p, c, txt]) => { if (p) { octx.fillStyle = c; octx.fillRect((p.x + off.x) * sx - 4, (p.y + off.y) * sy - 4, 8, 8); octx.fillText(txt + " %", (p.x + off.x) * sx + 6, (p.y + off.y) * sy - 6); } });
+      if (src === "camera" && markerPos) { octx.strokeStyle = "#52d273"; octx.lineWidth = 2; octx.beginPath(); octx.arc(markerPos.x * sx, markerPos.y * sy, 10, 0, 7); octx.stroke(); }
+      if (src === "lips") {
+        if (face) {   // contour des lèvres
+          const P = face.pts, LIP = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84, 181, 91, 146];
+          octx.strokeStyle = "#ff7eb6"; octx.lineWidth = 2; octx.beginPath();
+          LIP.forEach((i, k) => { const x = P[i].x * ov.width, y = P[i].y * ov.height; k ? octx.lineTo(x, y) : octx.moveTo(x, y); }); octx.closePath(); octx.stroke();
+        }
+        if (mouthPos) { octx.fillStyle = "#52d273"; octx.beginPath(); octx.arc(mouthPos.x * sx, mouthPos.y * sy, 5, 0, 7); octx.fill(); }
+        if (basePos) { octx.strokeStyle = "#ffd166"; octx.lineWidth = 2; octx.beginPath(); octx.arc(basePos.x * sx, basePos.y * sy, 10, 0, 7); octx.stroke(); octx.fillStyle = "#ffd166"; octx.fillText("base", basePos.x * sx + 12, basePos.y * sy); }
+        if (!face && stream) { octx.fillStyle = "#ff6b6b"; octx.fillText(FaceAI.state === "ready" ? "visage non détecté" : "IA visage : " + FaceAI.state, 8, 16); }
+      }
+    }
+  }
+}
+
+/* ====================================================================
+ * Initialisation
+ * ==================================================================== */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Deep", roleLabels: { vib: "Vibration (récompense)", stim: "Shock (inactivité)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Démarre la séance pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", curVib, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Démarre la séance pour tester."); firePulse(); consecStims = 0; };
+
+const KEY = "deepTrainerCfg";
+const FIELDS = ["source","facing","colTol","baud","smooth","deepThr","ptsDepth","ptsHold","ptsRecord","reachThr","reachReset","ptsReach","vibDepth","vibHold","vibBase","vibReach","vibSync",
+  "guideBpm","guideRamp","guideLow","guideHigh","ptsSync","lowThr","idleMax","stimLvl","pulseMs","stimEsc","stimCd","holdMax","breathS","workS","restS","sets","maxVib","maxStim"];
+const CHECKS = ["sound", "voice", "useBase", "guideOn", "guideTick"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS, { cal, target, bestDepth, bestHold });
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+const c = Cfg.load(KEY, FIELDS, CHECKS);
+if (c) {
+  if (c.cal) cal = { ...cal, ...c.cal };
+  if (c.target) { target = c.target; $("swatch").style.background = `rgb(${target.map(Math.round).join(",")})`; }
+  bestDepth = c.bestDepth || 0; bestHold = c.bestHold || 0;
+}
+applyEquip();
+if ($("source").options[$("source").selectedIndex].disabled) $("source").value = [...$("source").options].find(o => !o.disabled).value;
+updateSourceUI();
+/* Carrière : profondeur visée, tolérance d'inactivité, séries et repos suivent le niveau.
+   La sécurité respiratoire (maintien max, pause respiration) n'est jamais modifiée. */
+Game.init("deep", {
+  apply: (p, on) => {
+    const F = { deepThr: p.deepThr, idleMax: p.idleMax, workS: p.workS, sets: p.sets, restS: p.restS };
+    for (const [id, v] of Object.entries(F)) { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; if (on) $(id).value = v; }
+  },
+});
+/* Aperçu et contrôle pour la télécommande */
+Partner.init("deep", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Profondeur", v: depthValid ? Math.round(depth) : 0, max: 120, unit: " %" },
+    phase: PH[phase] + (phase === "WORK" || phase === "REST" ? ` — série ${setNo}/${num("sets")}` : ""),
+    chips: [["Score", Math.round(score)], ["Fois à 100 %", reachN], ["Record", bestDepth.toFixed(0) + " %"], ["Maintien", holdT.toFixed(1) + " s"], ["Inactivité", idleT.toFixed(0) + " s"],
+      ...($("guideOn").checked ? [["Rythme", guideBpm() + " /min"], ["Synchro", Math.round(sync * 100) + " %"]] : [])],
+  }),
+  actions: () => !App.armed ? [] : [
+    ...(phase === "WORK" ? [{ id: "breath", label: "😮‍💨 Pause respiration" }] : []),
+    { id: "bonus", label: "🏆 Bonus +100 points" },
+    $("guideOn").checked ? { id: "guideOff", label: "🥁 Couper le guide de rythme" } : { id: "guideOn", label: "🥁 Lancer le guide de rythme" },
+    ...($("guideOn").checked ? [{ id: "faster", label: "🥁 Plus vite (+5 /min)" }, { id: "slower", label: "🥁 Plus lent (−5 /min)" }] : []),
+  ],
+  doAction: id => {
+    if (!App.armed) return;
+    if (id === "breath" && phase === "WORK") { holdT = 0; log("🎮 Pause respiration demandée par le partenaire."); setPhase("BREATH"); }
+    else if (id === "bonus") { score += 100; beep(1320, 90, 2); log("🎮 Bonus +100 points du partenaire !"); }
+    else if (id === "guideOn" || id === "guideOff") { $("guideOn").checked = id === "guideOn"; gPhase = 0; log("🎮 Guide de rythme " + (id === "guideOn" ? "lancé." : "coupé.")); Speak.say(id === "guideOn" ? "Suis le rythme" : "Rythme libre"); }
+    else if (id === "faster" || id === "slower") { $("guideBpm").value = clamp(num("guideBpm") + (id === "faster" ? 5 : -5), 5, 120); log("🎮 Rythme → " + guideBpm() + " /min"); Speak.say(id === "faster" ? "Plus vite" : "Plus lentement"); }
+  },
+});
+setInterval(tick, 100);
+log("Prêt. Connecte Intiface, choisis la source, calibre 0 % et 100 %, puis démarre.");
+</script>
+</body>
+</html>

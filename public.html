@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Public Play</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .sit{display:grid;grid-template-columns:1fr auto auto auto;gap:6px 8px;align-items:center}
+  .sit .h{font-size:11.5px;color:var(--mute)}
+  .sit input[type=number]{width:70px}
+  .code{font:600 15px ui-monospace,monospace;letter-spacing:.04em;background:#0b0b0e;border:1px solid var(--line);border-radius:10px;padding:10px;word-break:break-all;user-select:all}
+  #assistBox{background:#2a2412;border:1px solid #5a4a14;border-radius:12px;padding:12px;margin:10px 0}
+  #assistBox b{font-size:22px}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Public Play</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="sitBig">— capteurs inactifs</div>
+    <div class="stat"><span>Vibration</span><div class="meter" id="vibMeter"><div id="vibBar" class="vibC"></div><div class="mark" id="capMark"></div></div><span id="vibVal">0</span></div>
+    <div class="stat"><span>Chaleur</span><div class="meter"><div id="heatBar" class="warnC"></div></div><span id="heatVal">0 %</span></div>
+    <div class="chips">
+      <span id="nextInfo">En pause</span>
+      <span>Rythme <b id="freqX">×1</b></span>
+      <span>Plafond <b id="capVal">—</b></span>
+      <span>Bruit <b id="dbVal">—</b></span>
+      <span>Session <b id="sessT">0:00</b></span>
+    </div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secSensors" open>
+    <summary>📡 Situation <small id="sensSum">capteurs arrêtés</small></summary>
+    <div class="body">
+      <label class="f" data-need="gyro"><span>Mouvement (accéléromètre)</span><input id="useAcc" type="checkbox" checked></label>
+      <label class="f"><span>GPS (vitesse, détecte les transports)</span><input id="useGps" type="checkbox" checked></label>
+      <label class="f"><span>Micro (bruit ambiant, rien n'est enregistré)</span><input id="useMic" type="checkbox" checked></label>
+      <div class="row"><button id="sensBtn" class="primary">Activer les capteurs</button></div>
+      <div class="chips"><span>Agitation <b id="accVal">—</b> m/s²</span><span>Vitesse <b id="spdVal">—</b> km/h</span><span>Bruit <b id="dbVal2">—</b> dB</span></div>
+      <label class="f"><span>Seuil « marche » (agitation m/s²)</span><input id="walkThr" type="number" min="0.1" max="10" step="0.1" value="1.0"></label>
+      <label class="f"><span>Seuil « transport » (km/h)</span><input id="vehThr" type="number" min="5" max="80" value="15"></label>
+      <p class="muted">Dans l'application, les capteurs continuent écran éteint (notification « BPlaysure actif »). Rien ne quitte le téléphone : seule la situation (immobile, marche, transport) est envoyée au partenaire, jamais ta position.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secDiscreet" open>
+    <summary>🤫 Discrétion <small>plafond anti-bruit</small></summary>
+    <div class="body">
+      <label class="f"><span>Plafond en endroit calme (%)</span><input id="capQuiet" type="number" min="0" max="100" value="25"></label>
+      <label class="f"><span>Adapter au bruit ambiant (micro)</span><input id="adaptive" type="checkbox" checked></label>
+      <div id="adaptBox">
+        <label class="f"><span>Plafond en endroit bruyant (%)</span><input id="capLoud" type="number" min="0" max="100" value="50"></label>
+        <label class="f"><span>« Calme » en dessous de (dB)</span><input id="dbQuiet" type="number" min="-100" max="0" value="-55"></label>
+        <label class="f"><span>« Bruyant » au-dessus de (dB)</span><input id="dbLoud" type="number" min="-100" max="0" value="-30"></label>
+        <p class="muted">Le niveau sonore est relatif (0 dB = saturation du micro). Regarde la valeur « Bruit » chez toi au calme puis dehors pour régler ces deux seuils.</p>
+      </div>
+      <label class="f"><span>Motifs doux uniquement (plus silencieux)</span><input id="softOnly" type="checkbox" checked></label>
+      <div class="row"><button id="assistBtn">🎧 Trouver ma limite d'audibilité</button></div>
+      <div id="assistBox" class="hidden">
+        Niveau testé : <b id="assistLvl">0</b> %<br>
+        <span class="muted">Dans une pièce calme, jouet porté comme dehors. Appuie dès que tu l'entends.</span>
+        <div class="row"><button id="assistHeard" class="primary">Je l'entends !</button><button id="assistCancel">Annuler</button></div>
+      </div>
+      <div class="row"><button id="testCap">Écouter le plafond actuel (3 s)</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secTease">
+    <summary>🎲 Taquineries aléatoires</summary>
+    <div class="body">
+      <div class="sit">
+        <span class="h">Situation</span><span class="h">Actif</span><span class="h">Fréq. /10 min</span><span class="h">Force %</span>
+        <span>🪑 Immobile</span><input id="onStill" type="checkbox" checked><input id="fStill" type="number" min="0" max="30" step="0.5" value="4"><input id="pStill" type="number" min="0" max="100" value="100">
+        <span>🚶 Marche</span><input id="onWalk" type="checkbox" checked><input id="fWalk" type="number" min="0" max="30" step="0.5" value="2"><input id="pWalk" type="number" min="0" max="100" value="70">
+        <span>🚆 Transport</span><input id="onVeh" type="checkbox" checked><input id="fVeh" type="number" min="0" max="30" step="0.5" value="3"><input id="pVeh" type="number" min="0" max="100" value="90">
+      </div>
+      <p class="muted">Force = part du plafond de discrétion. La fréquence est une moyenne : les moments exacts restent imprévisibles.</p>
+      <label class="f"><span>Durée d'une taquinerie : min (s)</span><input id="dMin" type="number" min="1" max="60" value="3"></label>
+      <label class="f"><span>Durée d'une taquinerie : max (s)</span><input id="dMax" type="number" min="1" max="120" value="12"></label>
+      <label class="f"><span>Pause minimale entre deux (s)</span><input id="gapMin" type="number" min="5" max="1800" value="40"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secHeat">
+    <summary>🌡️ Montée en température</summary>
+    <div class="body">
+      <label class="f"><span>Chaleur au départ (%)</span><input id="heatStart" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Temps pour atteindre 100 % (min)</span><input id="heatMin" type="number" min="1" max="600" value="60"></label>
+      <label class="f"><span>La chaleur accélère les taquineries (%)</span><input id="heatFreq" type="number" min="0" max="100" value="70"></label>
+      <label class="f"><span>Vibration max cumulée par 10 min (s)</span><input id="budget" type="number" min="5" max="600" value="60"></label>
+      <p class="muted">Plus la chaleur monte, plus les taquineries sont fréquentes (à 70 % : ×0,3 à froid, ×1 à mi-chaleur, ×1,7 à chaleur max ; la pause minimale reste respectée) et plus elles sont fortes, sans jamais dépasser le plafond de discrétion. Le temps cumulé par 10 minutes évite d'aller trop loin.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f"><span>Plafond absolu vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="70"></label>
+      <label class="f"><span>Fin automatique après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="720" value="240"></label>
+      <div class="row"><button id="testTease">Taquinerie test</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script>
+"use strict";
+/* ====================================================================
+ * Situation : immobile / marche / transport (avec hystérésis)
+ * ==================================================================== */
+const SIT = { still: "🪑 Immobile", walk: "🚶 Marche", veh: "🚆 Transport" };
+const SITKEY = { still: "Still", walk: "Walk", veh: "Veh" };
+let sit = "still", sitCand = "still", sitSince = Date.now();
+function rawSituation(){
+  const kmh = Sensors.spdLive && (Sensors.spdAcc == null || Sensors.spdAcc < 60) ? Sensors.spd * 3.6 : null;
+  if (kmh != null && kmh >= num("vehThr")) return "veh";
+  if ((Sensors.accLive && Sensors.acc >= num("walkThr")) || (kmh != null && kmh >= 2.5)) return "walk";
+  return "still";
+}
+function updateSituation(){
+  const r = rawSituation();
+  if (r !== sitCand) { sitCand = r; sitSince = Date.now(); }
+  const hold = sitCand === "veh" ? 8000 : 4000;
+  if (sitCand !== sit && Date.now() - sitSince >= hold) {
+    sit = sitCand; log("Situation : " + SIT[sit]);
+    if (App.armed) scheduleNext(true);
+  }
+}
+
+/* ====================================================================
+ * Discrétion, chaleur, budget
+ * ==================================================================== */
+function discreetCap(){
+  let cap = num("capQuiet");
+  if ($("adaptive").checked && Sensors.dbLive) {
+    const k = clamp((Sensors.db - num("dbQuiet")) / Math.max(1, num("dbLoud") - num("dbQuiet")), 0, 1);
+    cap = num("capQuiet") + (num("capLoud") - num("capQuiet")) * k;
+  }
+  return clamp(Math.min(cap, num("maxVib")), 0, 100);
+}
+function heat(){
+  if (!App.armed) return 0;
+  const min = (Date.now() - armedAt) / 60000;
+  return clamp(num("heatStart") + (100 - num("heatStart")) * min / Math.max(1, num("heatMin")), 0, 100) / 100;
+}
+const vibLog = []; // [t, dt] secondes vibrées
+function budgetUsed(){ const t = Date.now(); while (vibLog.length && t - vibLog[0][0] > 600000) vibLog.shift(); return vibLog.reduce((s, x) => s + x[1], 0); }
+
+/* ====================================================================
+ * Motifs (0–1) : t = progression 0–1, s = secondes écoulées
+ * ==================================================================== */
+function pickPattern(){
+  const keys = Object.keys(PATTERNS).filter(k => !$("softOnly").checked || PATTERNS[k].soft);
+  return keys[Math.floor(Math.random() * keys.length)];
+}
+
+/* ====================================================================
+ * Moteur
+ * ==================================================================== */
+let armedAt = 0, tease = null, nextAt = 0, capTest = null, assist = null, curVib = 0, lastTick = performance.now();
+
+/* Fréquence × chaleur : à 0 % de chaleur ×(1−k), à 50 % ×1, à 100 % ×(1+k) ;
+   à froid la pause minimale est aussi allongée, elle revient à sa valeur à chaleur max. */
+function heatFactor(){ const k = clamp(num("heatFreq"), 0, 100) / 100; return Math.max(0.05, 1 - k + 2 * k * heat()); }
+function gapEff(){ const k = clamp(num("heatFreq"), 0, 100) / 100; return num("gapMin") * (1 + k * (1 - heat())); }
+let lastTeaseEnd = 0, schedHeat = 0;
+function scheduleNext(fromSituationChange = false){
+  const k = SITKEY[sit], f = num("f" + k) * heatFactor();
+  schedHeat = heat();
+  if (!$("on" + k).checked || f <= 0) { nextAt = Infinity; return; }
+  const mean = 600 / f, wait = -Math.log(1 - Math.random()) * mean;
+  const t = Math.max(Date.now() + wait * 1000, lastTeaseEnd + gapEff() * 1000, Date.now() + 3000);
+  nextAt = fromSituationChange && nextAt !== Infinity ? Math.max(lastTeaseEnd + gapEff() * 1000, Math.min(nextAt, t)) : t;
+}
+function startTease(reason){
+  const k = SITKEY[sit];
+  const dMin = Math.max(1, num("dMin")), dMax = Math.max(dMin, num("dMax"));
+  const dur = dMin + Math.random() * (dMax - dMin);
+  const force = num("p" + k) / 100 * (0.35 + 0.65 * heat()) * (0.75 + 0.25 * Math.random());
+  const pat = pickPattern();
+  tease = { pat, dur, force, t0: Date.now() };
+  log(`Taquinerie ${PATTERNS[pat].label} · ${dur.toFixed(0)} s · ${Math.round(force * 100)} % du plafond${reason ? " (" + reason + ")" : ""}`);
+}
+
+function setArmed(on){
+  App.armed = on;
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  tease = null; capTest = null; assist = null; $("assistBox").classList.add("hidden");
+  if (on) {
+    armedAt = Date.now(); lastTeaseEnd = 0; scheduleNext(); log("Public Play armé.");
+    if (!Sensors.running) startSensors();
+    Game.start();
+  } else {
+    curVib = sendLevel("vib", 0, true); nextAt = 0;
+    if (Game.run) { Game.xp((Date.now() - armedAt) / 60000 * 10); Game.end(); }
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT"); }
+
+function tick(){
+  const now = performance.now(), dt = (now - lastTick) / 1000;
+  if (dt < 0.08) return;                    // évite le double appel (minuterie + réveil natif)
+  lastTick = now;
+  App.bp.pingIfDue(); if (Link.mq) Link.mq.pingIfDue();
+  updateSituation();
+  const t = Date.now(), cap = discreetCap();
+  let level = 0, info = App.armed ? "" : "En pause";
+
+  if (App.armed) {
+    if (Game.run) Game.progress((t - armedAt) / 60000);
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); return; }
+
+    if (assist) {                                    // assistant d'audibilité
+      const s = (t - assist.t0) / 1000;
+      assist.lvl = Math.min(100, 4 + Math.floor(s / 2.5) * 4);
+      level = Math.min(assist.lvl, num("maxVib")); $("assistLvl").textContent = level;
+      info = "Test d'audibilité";
+      if (assist.lvl >= num("maxVib") || assist.lvl >= 100) { log("Assistant : jamais entendu jusqu'au plafond absolu."); stopAssist(); }
+    } else if (capTest && t < capTest.until) {      // écoute du plafond
+      level = cap; info = "Écoute du plafond";
+    } else if (Partner.remoteActive) {               // le partenaire a la main (niveau appliqué par sendLevel)
+      info = "🎮 Partenaire";
+    } else {
+      capTest = null;
+      if (tease) {
+        const s = (t - tease.t0) / 1000;
+        if (s >= tease.dur || !$("on" + SITKEY[sit]).checked) { tease = null; lastTeaseEnd = t; scheduleNext(); }
+        else { level = cap * tease.force * PATTERNS[tease.pat].f(s / tease.dur, s, tease.dur); info = "〰️ " + PATTERNS[tease.pat].label; }
+      }
+      if (!tease) {
+        if (nextAt !== Infinity && heat() - schedHeat >= 0.05) scheduleNext();     // la chaleur a monté : on raccourcit l'attente
+        if (t >= nextAt) {
+          if (budgetUsed() >= num("budget")) { nextAt = t + 30000; log("Quota de 10 min atteint : on laisse redescendre."); }
+          else startTease();
+        }
+        info = nextAt === Infinity ? "Taquineries off ici" : "Prochaine dans " + fmtS(Math.max(0, (nextAt - t) / 1000));
+      }
+    }
+    if (level > 0.5 && !Partner.remoteActive) vibLog.push([t, dt]);
+  }
+  curVib = sendLevel("vib", level);
+
+  // --- affichage
+  const h = heat();
+  $("sitBig").textContent = (Sensors.running ? SIT[sit] : "— capteurs inactifs") + (App.armed ? "" : " · en pause");
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("capMark").style.left = cap + "%"; $("capVal").textContent = cap.toFixed(0) + " %";
+  $("heatBar").style.width = h * 100 + "%"; $("heatVal").textContent = Math.round(h * 100) + " %"; $("freqX").textContent = "×" + heatFactor().toFixed(1);
+  $("nextInfo").textContent = info;
+  $("dbVal").textContent = $("dbVal2").textContent = Sensors.dbLive ? Sensors.db.toFixed(0) : "—";
+  $("accVal").textContent = Sensors.accLive ? Sensors.acc.toFixed(2) : "—";
+  $("spdVal").textContent = Sensors.spdLive ? (Sensors.spd * 3.6).toFixed(0) : "—";
+  const s = App.armed ? Math.floor((t - armedAt) / 1000) : 0;
+  $("sessT").textContent = Math.floor(s / 3600) ? `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, "0")}` : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+const fmtS = x => x >= 60 ? Math.floor(x / 60) + " min " + String(Math.floor(x % 60)).padStart(2, "0") : Math.ceil(x) + " s";
+BgHooks.push(tick);   // réveil par le code natif quand l'écran est éteint
+
+/* ====================================================================
+ * Capteurs
+ * ==================================================================== */
+function startSensors(){
+  const opts = { accel: $("useAcc").checked, gps: $("useGps").checked, mic: $("useMic").checked };
+  Sensors.start(opts).catch(e => log("Capteurs : " + e.message));
+  $("sensBtn").textContent = "Arrêter les capteurs"; $("sensSum").textContent = "actifs";
+  log("Capteurs démarrés" + (Sensors.native ? " (fonctionnent écran éteint)." : " (garde l'écran allumé dans un navigateur)."));
+}
+$("sensBtn").onclick = () => {
+  if (Sensors.running) { Sensors.stop(); $("sensBtn").textContent = "Activer les capteurs"; $("sensSum").textContent = "capteurs arrêtés"; }
+  else startSensors();
+};
+$("adaptive").onchange = () => $("adaptBox").classList.toggle("hidden", !$("adaptive").checked);
+
+/* Assistant d'audibilité */
+function stopAssist(){ assist = null; $("assistBox").classList.add("hidden"); }
+$("assistBtn").onclick = () => {
+  if (!App.armed) return log("Arme d'abord (bouton en bas) pour tester.");
+  tease = null; capTest = null; assist = { t0: Date.now(), lvl: 4 }; $("assistBox").classList.remove("hidden");
+};
+$("assistHeard").onclick = () => {
+  if (!assist) return;
+  const v = Math.max(0, assist.lvl - 6); $("capQuiet").value = v;
+  if (+$("capLoud").value < v) $("capLoud").value = v;
+  log(`Entendu à ${assist.lvl} % → plafond calme réglé à ${v} %. Pense à sauvegarder.`); stopAssist();
+};
+$("assistCancel").onclick = stopAssist;
+$("testCap").onclick = () => {
+  if (!App.armed) return log("Arme d'abord pour tester.");
+  capTest = { until: Date.now() + 3000 };
+};
+$("testTease").onclick = () => { if (!App.armed) return log("Arme d'abord pour tester."); capTest = null; startTease("test"); };
+
+/* ====================================================================
+ * Initialisation
+ * ==================================================================== */
+App.cap = { vib: () => num("maxVib"), stim: () => Partner.cfg.stimCap };
+initShell({ clientName: "BPlaysure · Sortie", roleLabels: { vib: "Vibration", stim: "Shock (à distance)" }, emergencyStop, onDisconnect: () => setArmed(false), background: true });
+$("arm").onclick = () => setArmed(!App.armed);
+
+const KEY = "outdoorCfg";
+const FIELDS = ["walkThr","vehThr","capQuiet","capLoud","dbQuiet","dbLoud","fStill","pStill","fWalk","pWalk","fVeh","pVeh","dMin","dMax","gapMin","heatStart","heatMin","heatFreq","budget","maxVib","sessionMax"];
+const CHECKS = ["useAcc","useGps","useMic","adaptive","softOnly","onStill","onWalk","onVeh"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+if (!Equip.gyro) $("useAcc").checked = false;
+$("adaptive").onchange();
+// Capteurs démarrés dès l'ouverture, écran allumé : Android n'autorise pas à démarrer
+// le GPS et le micro en arrière-plan si le téléphone est déjà verrouillé au moment d'armer.
+if (Sensors.native) startSensors();
+
+/* Carrière : fréquence et durée des taquineries, pauses et montée en chaleur suivent le niveau
+   (le plafond de discrétion reste toujours le tien) */
+Game.init("public", {
+  apply: (p, on) => {
+    const F = { fStill: Math.round(4 * p.freq * 2) / 2, fWalk: Math.round(2 * p.freq * 2) / 2, fVeh: Math.round(3 * p.freq * 2) / 2, dMax: p.dMax, gapMin: p.gapMin, heatMin: p.heatMin };
+    for (const [id, v] of Object.entries(F)) { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; if (on) $(id).value = v; }
+  },
+});
+/* Aperçu et contrôle pour la télécommande */
+Partner.init("public", {
+  setArmed,
+  vibCap: () => Partner.cfg.discreet ? Math.min(discreetCap(), Partner.cfg.vibCap) : Math.min(Partner.cfg.vibCap, num("maxVib")),
+  blockRemote: () => !!assist,
+  telemetry: () => ({
+    main: { label: "Chaleur", v: Math.round(heat() * 100), max: 100, unit: " %" },
+    phase: (Sensors.running ? SIT[sit] : "capteurs inactifs") + " · " + $("nextInfo").textContent,
+    chips: [["Plafond", Math.round(discreetCap()) + " %"], ["Bruit", Sensors.dbLive ? Sensors.db.toFixed(0) + " dB" : "—"], ["Quota 10 min", Math.round(budgetUsed()) + "/" + num("budget") + " s"], ["Rythme", "×" + heatFactor().toFixed(1)]],
+  }),
+  actions: () => App.armed ? [{ id: "tease", label: "〰️ Taquinerie maintenant" }, { id: "later", label: "⏭️ Repousser la prochaine" }] : [],
+  doAction: id => {
+    if (!App.armed) return;
+    if (id === "tease") { capTest = null; startTease("partenaire"); }
+    else if (id === "later") { tease = null; lastTeaseEnd = Date.now(); scheduleNext(); log("🎮 Prochaine taquinerie repoussée."); }
+  },
+});
+setInterval(tick, 200);
+log("Prêt. Connecte Intiface, active les capteurs, règle ta discrétion, puis « Armer ». L'écran peut être éteint.");
+</script>
+</body>
+</html>

@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Eye Contact</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  .camWrap{position:relative}
+  .camWrap video{max-height:none}
+  #faceOv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #banner.on{background:#103040;color:#4cc9f0}
+  #calBox{background:#132a3a;border:1px solid #1f4a5a;border-radius:12px;padding:10px;margin:8px 0;text-align:center;font-weight:700}
+  .radarRow{display:flex;gap:12px;align-items:center;margin:8px 0}
+  #radar{width:140px;height:140px;flex:none;background:#0b1820;border-radius:50%}
+  /* plein écran de distraction */
+  #fs{position:fixed;inset:0;z-index:9000;background:#000;overflow:hidden;touch-action:none;user-select:none}
+  #fsImg,#fsVid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;max-height:none;border-radius:0;background:#000}
+  #fsCv{position:absolute;inset:0;width:100%;height:100%}
+  #fsFrame{position:absolute;inset:0;pointer-events:none;transition:box-shadow .25s}
+  #fsTarget{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 12px #fff;animation:tgt 1.4s ease-in-out infinite;pointer-events:none}
+  #fsTarget::after{content:"";position:absolute;left:50%;top:50%;width:8px;height:8px;margin:-4px 0 0 -4px;border-radius:50%;background:#fff}
+  @keyframes tgt{50%{transform:scale(.7);opacity:.6}}
+  #fsHud{position:absolute;left:0;right:0;bottom:calc(64px + env(safe-area-inset-bottom));text-align:center;font:700 15px system-ui;color:#fff;text-shadow:0 0 6px #000;pointer-events:none}
+  #fsRadar{position:absolute;right:10px;bottom:calc(70px + env(safe-area-inset-bottom));width:90px;height:90px;border-radius:50%;background:#0008;pointer-events:none}
+  #fsBtns{position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  #fsBtns button{flex:1;min-height:46px;border-radius:12px;font-weight:800;border:0}
+  #fsStop{background:#d62839;color:#fff}
+  #fsExit{background:#ffffff22;color:#fff;position:relative;overflow:hidden}
+  #fsExit i{position:absolute;left:0;top:0;bottom:0;width:0;background:#ffffff44}
+  /* vue caméra : vidéo sur tout l'écran, monitoring en superposition transparente */
+  body.camFull .camWrap{position:fixed;inset:0;z-index:8000;background:#000;margin:0}
+  body.camFull .camWrap video{width:100%;height:100%;max-height:none;border-radius:0;object-fit:cover}
+  #camHud,#camBar,#camRadar{display:none}
+  body.camFull #camHud{display:block;position:fixed;left:0;right:0;top:0;z-index:8001;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;color:#fff;text-shadow:0 0 6px #000,0 0 2px #000;pointer-events:none;background:linear-gradient(#0008,#0000)}
+  #camHud .hS{font:800 17px system-ui}
+  #camHud .hL{font:600 13px system-ui;opacity:.9;margin-top:3px}
+  #camHud .hBars{display:flex;gap:8px;margin-top:6px;max-width:420px}
+  #camHud .hBars div{flex:1;height:6px;border-radius:3px;background:#ffffff30;overflow:hidden}
+  #camHud .hBars i{display:block;height:100%;width:0}
+  body.camFull #camBar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:8001;gap:8px;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom));background:linear-gradient(#0000,#0009)}
+  #camBar button{flex:1;min-height:46px;border-radius:12px;border:1px solid #ffffff30;background:#00000055;color:#fff;font-weight:800;backdrop-filter:blur(4px)}
+  #camBar button.armed{background:#1d6b3a}
+  body.camFull #camBar{flex-wrap:wrap}
+  #camBar .cbWide{order:-1;flex:1 1 45%;font-size:13.5px}
+  #camBar #cbStop{background:#d62839;border:0;flex:1.3}
+  body.camFull #camRadar{display:block;position:fixed;right:10px;bottom:calc(132px + env(safe-area-inset-bottom));z-index:8001;width:96px;height:96px;border-radius:50%;background:#0006;pointer-events:none}
+  body.camFull.partner #camHud .hL,body.camFull.partner #camHud .hBars{display:none}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Eye Contact</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="banner" style="font-size:16px">📷 Démarre la caméra</div>
+    <div class="stat"><span>Écart du regard</span><div class="meter" id="devMeter"><div id="devBar" class="accC"></div></div><span id="devVal">—</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips"><span>D'affilée <b id="streakT">0.0</b> s</span><span>Record <b id="bestT">0</b> s</span><span>Cumul <b id="totT">0</b> s</span><span>Détournés <b id="breakN">0</b></span><span data-need="stim">Shocks <b id="shockN">0</b></span><span>Session <b id="sessT">0:00</b></span></div>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secDetect" open>
+    <summary>👁️ Regard (suivi de l'iris) <small id="calSum"></small></summary>
+    <div class="body">
+      <div class="row">
+        <select id="facing"><option value="user" selected>Caméra avant</option><option value="environment">Caméra arrière</option></select>
+        <select id="camRes"><option value="hd" selected>HD (iris plus précis)</option><option value="sd">Standard (plus fluide)</option></select>
+        <button id="camBtn" class="primary">Démarrer la caméra</button>
+      </div>
+      <div class="camWrap"><video id="video" autoplay playsinline muted></video><canvas id="faceOv"></canvas></div>
+      <div class="row"><button id="camViewBtn">📷 Vue caméra plein écran</button></div>
+      <label class="f"><span>Vue caméra plein écran au démarrage de la caméra</span><input id="camAuto" type="checkbox" checked></label>
+      <div id="calBox" class="hidden"></div>
+      <div class="radarRow"><canvas id="radar" width="140" height="140"></canvas>
+        <p class="muted" id="radarInfo" style="margin:0">Le point montre où se dirige le regard par rapport à la cible ; le cercle, la tolérance.</p></div>
+      <div class="row"><button id="calBtn">🎯 1. Calibrer la cible (3 s)</button><button id="calHeadBtn">🔄 2. Compensation de la tête (8 s)</button></div>
+      <p class="muted" id="aiInfo">Chargement de l'IA…</p>
+      <label class="f"><span>Tolérance du regard (%, 100 % = 20°) <small class="muted" id="tolDeg"></small></span><input id="tol" type="number" min="5" max="90" value="20"></label>
+      <label class="f"><span>Regard détourné toléré (ms)</span><input id="grace" type="number" min="100" max="5000" step="50" value="600"></label>
+      <label class="f"><span>Clignement toléré (ms)</span><input id="blinkMs" type="number" min="100" max="1500" step="50" value="400"></label>
+      <label class="f"><span>Visage introuvable = regard détourné</span><input id="lostIsBreak" type="checkbox" checked></label>
+      <label class="f"><span>Lissage (anti-tremblement)</span><input id="smooth" type="range" min="0" max="90" value="40"></label>
+      <p class="muted">Le centre de chaque iris est localisé entre les coins de l'œil, puis combiné à l'orientation de la tête. <b>1.</b> Pose le téléphone à hauteur des yeux et fixe l'objectif de la caméra (ou le point visé) pendant 3 s. <b>2.</b> Toujours en fixant l'objectif, tourne doucement la tête à gauche, à droite, en haut et en bas : l'app apprend à distinguer « la tête bouge mais les yeux restent sur la cible » d'un vrai regard détourné. Bonne lumière de face = meilleure précision. Tout est analysé sur l'appareil.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secFs" open>
+    <summary>🌀 Plein écran de distraction</summary>
+    <div class="body">
+      <p class="muted">Pendant la séance, l'écran affiche un contenu fait pour attirer les yeux… mais il faut continuer à fixer l'objectif de la caméra. Le bord de l'écran devient rouge dès que le regard part.</p>
+      <div class="row"><button id="fsBtn" class="primary">🖥️ Ouvrir le plein écran</button></div>
+      <label class="f"><span>Contenu</span><select id="dMode"><option value="mix">🔀 Mélange</option><option value="spiral">🌀 Spirale hypnotique</option><option value="orbs">🔮 Orbes flottants</option><option value="words">💬 Mots</option><option value="photos">🖼️ Mes images / vidéos</option></select></label>
+      <label class="f"><span>Vitesse (%)</span><input id="dSpeed" type="range" min="20" max="300" value="100"></label>
+      <label class="f"><span>S'intensifie avec le regard tenu</span><input id="dEsc" type="checkbox" checked></label>
+      <label class="f"><span>Mélange : changer toutes les (s)</span><input id="dSwitch" type="number" min="3" max="600" value="20"></label>
+      <label class="f"><span>Images : changer toutes les (s)</span><input id="dSlide" type="number" min="1" max="600" value="6"></label>
+      <label class="f"><span>Son des vidéos</span><input id="dSound" type="checkbox"></label>
+      <input id="galIn" type="file" accept="image/*,video/*" multiple class="hidden">
+      <div class="row"><button id="galAdd">➕ Ajouter images / vidéos</button><button id="galClear">🗑️ Vider</button></div>
+      <p class="muted" id="galInfo">Galerie : —</p>
+      <label class="f" style="align-items:flex-start"><span>Mots (un par ligne)</span><textarea id="dWords" rows="5" style="max-width:55vw">Regarde-moi
+Ne détourne pas les yeux
+Obéis
+Concentre-toi
+Tu es à moi
+Ici
+Plus fort
+Résiste</textarea></label>
+      <label class="f"><span>Position de l'objectif à fixer</span><select id="dCam"><option value="tc">En haut, au centre</option><option value="tl">En haut, à gauche</option><option value="tr">En haut, à droite</option><option value="lc">À gauche (paysage)</option><option value="rc">À droite (paysage)</option><option value="none">Ne pas afficher de repère</option></select></label>
+      <label class="f"><span>Bord coloré selon le regard</span><input id="dStatus" type="checkbox" checked></label>
+      <label class="f"><span>Afficher le viseur du regard</span><input id="dRadar" type="checkbox"></label>
+      <label class="f"><span>Luminosité maximale (éclaire le visage)</span><input id="dBright" type="checkbox" checked></label>
+      <label class="f"><span>Ouvrir automatiquement en armant</span><input id="dAuto" type="checkbox" checked></label>
+      <p class="muted">⚠ Spirale et orbes sont animés : évite-les en cas de sensibilité aux images clignotantes. En plein écran, <b>ARRÊT</b> reste toujours visible ; « Quitter » se maintient 1 s.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secVib" data-need="vib">
+    <summary>〰️ Regard soutenu → vibration</summary>
+    <div class="body">
+      <label class="f"><span>Vibration de départ (%)</span><input id="vibBase" type="number" min="0" max="100" value="20"></label>
+      <label class="f"><span>+ par seconde de regard tenu (%)</span><input id="vibRamp" type="number" min="0" max="50" value="2"></label>
+      <label class="f"><span>Vibration maximale (%)</span><input id="vibTop" type="number" min="0" max="100" value="80"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Regard détourné → shock</summary>
+    <div class="body">
+      <label class="f"><span>Intensité du shock (%)</span><input id="stimLvl" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>Durée du shock (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="400"></label>
+      <label class="f"><span>Tant que le regard est détourné : un shock toutes les (s)</span><input id="stimCd" type="number" min="1" max="60" step="0.5" value="2"></label>
+      <label class="f"><span>Escalade (+% par shock consécutif)</span><input id="stimEsc" type="number" min="0" max="20" value="2"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="100"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Arrêt auto après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="240" value="20"></label>
+      <label class="f"><span>Sons</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration 2 s</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<div id="camHud"><div class="hS" id="hS"></div><div class="hL" id="hL"></div>
+  <div class="hBars"><div><i id="hVib" style="background:var(--vib,#c77dff)"></i></div><div><i id="hStim" style="background:#ff4d6d"></i></div></div></div>
+<canvas id="camRadar" width="96" height="96"></canvas>
+<div id="camBar"><button id="cbArm">Armer</button><button id="cbCal" class="cbWide">🎯 Calibrer la cible</button><button id="cbHead" class="cbWide">🔄 Compenser la tête</button><button id="cbFs">🌀</button><button id="cbExit">⤡</button><button id="cbStop">ARRÊT</button></div>
+
+<div id="fs" class="hidden">
+  <img id="fsImg" class="hidden" alt=""><video id="fsVid" class="hidden" playsinline loop></video>
+  <canvas id="fsCv"></canvas>
+  <div id="fsFrame"></div>
+  <div id="fsTarget"></div>
+  <canvas id="fsRadar" width="90" height="90" class="hidden"></canvas>
+  <div id="fsHud"></div>
+  <div id="fsBtns"><button id="fsStop">ARRÊT</button><button id="fsExit"><i></i>⤡ Quitter (maintenir)</button></div>
+</div>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="face.js"></script>
+<script>
+"use strict";
+/* ---------------- Caméra et IA ---------------- */
+let stream = null, newFrame = true;
+async function camToggle(){
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; $("video").srcObject = null; $("camBtn").textContent = "Démarrer la caméra"; camView(false); return; }
+  const hd = $("camRes").value === "hd";
+  try {
+    stream = await openCamera($("video"), $("facing").value, hd ? 1280 : 640, hd ? 720 : 480);
+    $("camBtn").textContent = "Arrêter la caméra";
+    if ($("camAuto").checked) camView(true);
+    const st = stream.getVideoTracks()[0].getSettings(); log(`Caméra démarrée (${st.width || "?"}×${st.height || "?"}).`);
+  } catch (e) { log("Caméra : " + e.message); }
+}
+$("camBtn").onclick = camToggle;
+$("facing").onchange = $("camRes").onchange = async () => { if (stream) { await camToggle(); await camToggle(); } };
+// n'analyse que les nouvelles images de la caméra
+(function vfc(){ const v = $("video"); if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { newFrame = true; vfc(); }); })();
+const HAS_VFC = !!$("video").requestVideoFrameCallback;
+FaceAI.load().then(ok => { $("aiInfo").textContent = ok ? "IA visage + iris prête." : "⚠ IA visage indisponible dans cette version (" + FaceAI.err + ")."; log($("aiInfo").textContent); });
+
+/* ---------------- Suivi de l'iris ----------------
+ * Pour chaque œil : centre de l'iris (5 points) exprimé dans le repère de l'œil
+ * (axe coin → coin, unité = largeur de l'œil), donc insensible à la distance,
+ * à l'inclinaison de la tête et au zoom. Les deux yeux sont pondérés par leur
+ * largeur apparente (l'œil le plus visible compte plus).
+ * Regard (degrés) = rotation de la tête + gain × décalage de l'iris ; le gain
+ * est appris à la « compensation de la tête » (sinon valeur moyenne). */
+const IRIS = [[468, 469, 470, 471, 472], [473, 474, 475, 476, 477]], EYEC = [[33, 133], [362, 263]];
+const DEG100 = 20, KDEF = 130;
+function irisFeat(f, W, H){
+  const P = f.pts; if (!P || P.length < 478) return null;
+  const px = i => ({ x: P[i].x * W, y: P[i].y * H });
+  const eyes = EYEC.map(([a, b]) => { const A = px(a), B = px(b); return { A, B, m: { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 } }; });
+  let sx = 0, sy = 0, sw = 0, n = 0;
+  for (const ring of IRIS) {
+    const c = { x: 0, y: 0 }; for (const i of ring) { const q = px(i); c.x += q.x / ring.length; c.y += q.y / ring.length; }
+    const e = eyes.reduce((u, v) => Math.hypot(c.x - u.m.x, c.y - u.m.y) <= Math.hypot(c.x - v.m.x, c.y - v.m.y) ? u : v);
+    const w = Math.hypot(e.B.x - e.A.x, e.B.y - e.A.y); if (w < 6) continue;
+    const ux = (e.B.x - e.A.x) / w, uy = (e.B.y - e.A.y) / w, dx = c.x - e.m.x, dy = c.y - e.m.y;
+    sx += (dx * ux + dy * uy); sy += (-dx * uy + dy * ux); sw += w; n++;
+  }
+  if (!n) return null;
+  const h = f.head || { yaw: 0, pitch: 0 };
+  return { ex: sx / sw, ey: sy / sw, yaw: h.yaw, pitch: h.pitch, eyePx: sw / n };
+}
+/* filtre « One Euro » : lisse fort à l'arrêt, suit vite les vrais mouvements */
+class Euro {
+  constructor(beta){ this.beta = beta; this.x = null; this.dx = 0; this.t = 0; }
+  static a(c, dt){ const r = 2 * Math.PI * c * dt; return r / (1 + r); }
+  f(x, t, minCut){
+    if (this.x == null || t - this.t > 600) { this.x = x; this.dx = 0; this.t = t; return x; }
+    const dt = Math.max(0.005, (t - this.t) / 1000); this.t = t;
+    this.dx += Euro.a(1, dt) * ((x - this.x) / dt - this.dx);
+    this.x += Euro.a(minCut + this.beta * Math.abs(this.dx), dt) * (x - this.x); return this.x;
+  }
+}
+const EF = { ex: new Euro(6), ey: new Euro(6), yaw: new Euro(0.05), pitch: new Euro(0.05) };
+function filtFeat(g, t){
+  const mc = 0.4 + (90 - num("smooth")) / 90 * 4.6;   // 0,4 Hz (très lissé) … 5 Hz (brut)
+  return { ex: EF.ex.f(g.ex, t, mc), ey: EF.ey.f(g.ey, t, mc), yaw: EF.yaw.f(g.yaw, t, mc), pitch: EF.pitch.f(g.pitch, t, mc), eyePx: g.eyePx };
+}
+let cal = null;            // { v:2, ex0, ey0, yaw0, pitch0, kx?, ky?, noise }
+let face = null, faceT = 0, feat = null, faceSeen = false, closed = false, dev = 100, devDeg = 99, parts = null, gaze = null;
+function measure(g){
+  const c = cal || { ex0: 0, ey0: 0, yaw0: 0, pitch0: 0 };
+  const dx = g.ex - c.ex0, dy = g.ey - c.ey0, dyaw = g.yaw - c.yaw0, dp = g.pitch - c.pitch0;
+  // axe compensé : la tête et les yeux s'annulent quand on fixe la cible en bougeant la tête
+  const ax = c.kx ? dyaw + c.kx * dx : (Math.abs(KDEF * dx) >= Math.abs(dyaw) * 0.67 ? KDEF * dx : dyaw * 0.67);
+  const ay = c.ky ? dp + c.ky * dy : (Math.abs(KDEF * dy) >= Math.abs(dp) * 0.67 ? KDEF * dy : dp * 0.67);
+  gaze = { x: ax, y: ay };
+  parts = { eye: Math.hypot(KDEF * dx, KDEF * dy), head: Math.hypot(dyaw, dp) };
+  devDeg = Math.hypot(ax, ay);
+  return clamp(devDeg / DEG100 * 100, 0, 100);
+}
+
+/* ---------------- Calibration ---------------- */
+let calRun = null;
+function startCal(phase){
+  if (!stream || FaceAI.state !== "ready") return log("Démarre d'abord la caméra (et attends l'IA).");
+  if (phase === "head" && !cal) return log("Fais d'abord l'étape 1 (calibrer la cible).");
+  calRun = { phase, until: Date.now() + (phase === "head" ? 8000 : 3000), s: [] };
+  $("calBox").classList.remove("hidden");
+  Speak.say(phase === "head" ? "Garde les yeux sur l'objectif, et tourne doucement la tête à gauche, à droite, en haut, en bas" : "Fixe l'objectif de la caméra");
+}
+$("calBtn").onclick = () => startCal("center");
+$("calHeadBtn").onclick = () => startCal("head");
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+const sd = a => { const m = mean(a); return Math.sqrt(mean(a.map(x => (x - m) ** 2))); };
+function fitK(h, e){            // gain tel que h + k·e reste constant
+  const mh = mean(h), me = mean(e); let c = 0, ve = 0, vh = 0;
+  for (let i = 0; i < h.length; i++) { c += (h[i] - mh) * (e[i] - me); ve += (e[i] - me) ** 2; vh += (h[i] - mh) ** 2; }
+  if (sd(h) < 4 || ve <= 0) return { ok: false, why: "pas assez de mouvement de la tête" };
+  const r = c / Math.sqrt(ve * vh), k = -c / ve;
+  if (Math.abs(r) < 0.5 || Math.abs(k) < 30 || Math.abs(k) > 500) return { ok: false, why: "les yeux ont quitté la cible" };
+  return { ok: true, k, r };
+}
+function calStep(){
+  if (!calRun) return;
+  const left = Math.ceil((calRun.until - Date.now()) / 1000);
+  $("calBox").textContent = calRun.phase === "head" ? `🔄 Yeux sur l'objectif, tourne doucement la tête… ${left}` : `🎯 Fixe l'objectif de la caméra… ${left}`;
+  if (feat && Date.now() - faceT < 200) calRun.s.push({ ...feat });
+  if (Date.now() < calRun.until) return;
+  const S = calRun.s, ph = calRun.phase; calRun = null; $("calBox").classList.add("hidden");
+  if (S.length < 10) return log("⚠ Visage ou iris pas assez visibles pendant la calibration : recommence avec plus de lumière.");
+  if (ph === "center") {
+    const old = cal && cal.v === 2 ? cal : {};
+    cal = { v: 2, ex0: mean(S.map(f => f.ex)), ey0: mean(S.map(f => f.ey)), yaw0: mean(S.map(f => f.yaw)), pitch0: mean(S.map(f => f.pitch)),
+      kx: old.kx || 0, ky: old.ky || 0, noise: KDEF * Math.hypot(sd(S.map(f => f.ex)), sd(S.map(f => f.ey))), at: new Date().toISOString() };
+    log(`✅ Cible calibrée · stabilité mesurée ±${cal.noise.toFixed(1)}°` + (cal.noise > 3 ? " (instable : améliore la lumière ou rapproche-toi)" : ""));
+    Speak.say("Cible calibrée");
+  } else {
+    const fx = fitK(S.map(f => f.yaw), S.map(f => f.ex)), fy = fitK(S.map(f => f.pitch), S.map(f => f.ey));
+    if (fx.ok) cal.kx = fx.k; if (fy.ok) cal.ky = fy.k;
+    log(`🔄 Compensation de la tête : gauche/droite ${fx.ok ? "✓" : "✗ (" + fx.why + ")"} · haut/bas ${fy.ok ? "✓" : "✗ (" + fy.why + ")"}`);
+    Speak.say(fx.ok || fy.ok ? "Compensation enregistrée" : "Recommence en tournant un peu plus la tête");
+  }
+  store.set("eyesCal", cal); beep(1100, 200, 2);
+}
+
+/* ---------------- Séance ---------------- */
+let contact = false, breakSince = 0, closedSince = 0, streak = 0, best = 0, tot = 0, breaks = 0;
+let armedAt = 0, curVib = 0, curStim = 0, shockN = 0, consec = 0, lastShock = 0, shockTimer = null;
+let looking = false, broken = false, unknown = true;
+const P_ = () => Game.run ? Game.run.p : null;
+const tolV = () => P_() ? P_().tol : num("tol");
+const graceV = () => P_() ? P_().grace : num("grace");
+
+function setArmed(on){
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  if (on) {
+    armedAt = Date.now(); streak = 0; best = 0; tot = 0; breaks = 0; shockN = 0; consec = 0; lastShock = 0; breakSince = 0;
+    if (!cal) log("ℹ️ Pas de calibration : le regard droit vers la caméra sert de référence (moins précis).");
+    log("Séance armée."); Game.start(); Speak.say("Regarde-moi. Ne détourne pas les yeux");
+    if ($("dAuto").checked && !FS.on) fsOpen();
+  } else {
+    Sched.cancel(shockTimer); curStim = 0; curVib = 0; sendLevel("vib", 0, true); sendLevel("stim", 0, true);
+    Game.end();
+  }
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); if (FS.on) fsClose(); log("⛔ ARRÊT D'URGENCE"); }
+function fireShock(why){
+  const lvl = num("stimLvl") + consec * num("stimEsc"), dur = clamp(num("pulseMs"), 100, 2000);
+  curStim = sendLevel("stim", lvl, true); shockN++; consec++; lastShock = Date.now();
+  log(`⚡ Shock ${Math.round(curStim)} % — ${why}`);
+  Sched.cancel(shockTimer); shockTimer = Sched.after(dur, () => { curStim = sendLevel("stim", 0, true); });
+}
+
+let lastTick = performance.now();
+function tick(){
+  const now = performance.now(), dt = Math.min(0.5, (now - lastTick) / 1000); lastTick = now;
+  const t = Date.now();
+  if (stream && (newFrame || !HAS_VFC)) {
+    newFrame = false;
+    face = FaceAI.detect($("video"));
+    const v = $("video"), g = face ? irisFeat(face, v.videoWidth, v.videoHeight) : null;
+    if (g) { feat = filtFeat(g, now); faceT = t; } else if (!face) feat = null;
+  } else if (!stream) { face = null; feat = null; }
+  if (t - faceT > 500) { feat = null; }
+  faceSeen = !!feat;
+  calStep();
+  if (feat) {
+    dev = measure(feat);
+    const bl = ((face.bs.eyeBlinkLeft || 0) + (face.bs.eyeBlinkRight || 0)) / 2;
+    if (bl > 0.55) { if (!closedSince) closedSince = t; } else closedSince = 0;
+  } else closedSince = 0;
+  closed = !!closedSince && t - closedSince > num("blinkMs");
+  unknown = !stream || FaceAI.state !== "ready";
+  looking = faceSeen && !closed && dev < tolV();
+  const lost = !unknown && (looking ? false : faceSeen || $("lostIsBreak").checked);
+  if (!lost) breakSince = 0; else if (!breakSince) breakSince = t;
+  broken = !!breakSince && t - breakSince >= graceV();
+  const wasContact = contact; contact = !unknown && !broken && (looking || !!breakSince);
+  if (App.armed && !App.suspended) {
+    if (contact && looking) { streak += dt; tot += dt; if (streak > best) best = streak; Game.xp(dt); }
+    if (wasContact && broken) { breaks++; streak = 0; log("👀 Regard détourné" + (closed ? " (yeux fermés)" : "") + "."); Speak.say(closed ? "Ouvre les yeux" : "Regarde-moi", "break", 3000); }
+    if (!broken) consec = 0;
+    if (Game.run) { Game.progress(tot); if (Game.run) Game.progress(best, "streak"); }
+    curVib = sendLevel("vib", contact ? Math.min(num("vibTop"), num("vibBase") + num("vibRamp") * streak) : 0);
+    if (Equip.stim && broken && curStim === 0 && t - lastShock >= num("stimCd") * 1000) fireShock(closed ? "yeux fermés" : "regard détourné");
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+  draw();
+}
+
+/* ---------------- Affichage ---------------- */
+const ov = $("faceOv"), octx = ov.getContext("2d");
+function drawRadar(cv){
+  const c = cv.getContext("2d"), S = cv.width, R = S / 2 - 4, k = R / DEG100;
+  c.clearRect(0, 0, S, S);
+  c.strokeStyle = "#ffffff22"; c.lineWidth = 1;
+  c.beginPath(); c.arc(S / 2, S / 2, R, 0, 7); c.moveTo(4, S / 2); c.lineTo(S - 4, S / 2); c.moveTo(S / 2, 4); c.lineTo(S / 2, S - 4); c.stroke();
+  c.strokeStyle = "#4cc9f0aa"; c.lineWidth = 2; c.beginPath(); c.arc(S / 2, S / 2, clamp(tolV(), 0, 100) / 100 * R, 0, 7); c.stroke();
+  if (faceSeen && gaze) {
+    const x = clamp(gaze.x * k, -R, R), y = clamp(gaze.y * k, -R, R);
+    c.fillStyle = looking ? "#4cc9f0" : "#ff6b6b"; c.beginPath(); c.arc(S / 2 + x, S / 2 + y, Math.max(4, S / 22), 0, 7); c.fill();
+  }
+}
+function stateText(){
+  return !stream ? "📷 Démarre la caméra" : unknown ? "⏳ IA visage…" : !faceSeen ? "❓ Visage / iris introuvables" : closed ? "😑 Yeux fermés !" : looking ? "👁️ Regard soutenu" : broken ? "⚠️ Regarde-moi !" : "👀 Reviens…";
+}
+function draw(){
+  const b = $("banner");
+  b.textContent = stateText();
+  b.classList.toggle("on", !!looking && !unknown);
+  $("devBar").style.width = (faceSeen ? dev : 100) + "%"; $("devVal").textContent = faceSeen ? `${Math.round(dev)} % · ${devDeg.toFixed(1)}°` : "—";
+  const m = $("devMeter"); let mk = m.querySelector(".mark"); if (!mk) { mk = document.createElement("div"); mk.className = "mark"; m.appendChild(mk); } mk.style.left = clamp(tolV(), 0, 100) + "%";
+  $("tolDeg").textContent = `≈ ${(tolV() / 100 * DEG100).toFixed(1)}°`;
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimBar").style.width = curStim + "%"; $("stimVal").textContent = curStim.toFixed(0);
+  $("streakT").textContent = streak.toFixed(1); $("bestT").textContent = Math.floor(best); $("totT").textContent = Math.floor(tot); $("breakN").textContent = breaks; $("shockN").textContent = shockN;
+  const s = App.armed ? Math.floor((Date.now() - armedAt) / 1000) : 0; $("sessT").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  $("calSum").textContent = !cal ? "non calibré" : (cal.kx || cal.ky) ? "calibré + tête" : "calibré";
+  camHud();
+  if (FS.on) { fsHud(); return; }
+  drawRadar($("radar"));
+  const v = $("video");
+  if (ov.width !== ov.clientWidth || ov.height !== ov.clientHeight) { ov.width = ov.clientWidth; ov.height = ov.clientHeight; }
+  octx.clearRect(0, 0, ov.width, ov.height);
+  if (face && v.videoWidth) {
+    // la vidéo est en « cover » : mêmes proportions pour le dessin
+    const W = ov.width, H = ov.height, sc = Math.max(W / v.videoWidth, H / v.videoHeight), ox = (W - v.videoWidth * sc) / 2, oy = (H - v.videoHeight * sc) / 2;
+    const X = p => ox + p.x * v.videoWidth * sc, Y = p => oy + p.y * v.videoHeight * sc, col = looking ? "#4cc9f0" : "#ff6b6b";
+    const EYES = [[33, 160, 158, 133, 153, 144], [362, 385, 387, 263, 373, 380]];
+    octx.strokeStyle = col; octx.lineWidth = 2;
+    for (const E of EYES) { octx.beginPath(); E.forEach((i, k) => { const p = face.pts[i]; k ? octx.lineTo(X(p), Y(p)) : octx.moveTo(X(p), Y(p)); }); octx.closePath(); octx.stroke(); }
+    if (face.pts.length > 477) for (const R of IRIS) {
+      const c = face.pts[R[0]], e = face.pts[R[1]], r = Math.hypot((e.x - c.x) * v.videoWidth, (e.y - c.y) * v.videoHeight) * sc;
+      octx.strokeStyle = col; octx.beginPath(); octx.arc(X(c), Y(c), Math.max(2, r), 0, 7); octx.stroke();
+      octx.fillStyle = col; octx.beginPath(); octx.arc(X(c), Y(c), 2, 0, 7); octx.fill();
+    }
+    if (parts) { octx.fillStyle = "#fff"; octx.font = "12px system-ui"; octx.fillText(`regard ${devDeg.toFixed(1)}° · iris ${parts.eye.toFixed(0)}° · tête ${parts.head.toFixed(0)}°` + (feat ? ` · œil ${Math.round(feat.eyePx)} px` : ""), 8, 16); }
+  }
+}
+
+/* ---------------- Vue caméra plein écran ----------------
+ * Partenaire connecté (télécommande) : caméra seule, monitoring minimal.
+ * Seul·e : caméra sur tout l'écran, monitoring discret en superposition transparente. */
+function camView(on){
+  document.body.classList.toggle("camFull", on);
+  $("camViewBtn").textContent = on ? "⤡ Quitter la vue caméra" : "📷 Vue caméra plein écran";
+  if (on) { window.scrollTo(0, 0); nativeCall("immersive", true, false); } else if (!FS.on) nativeCall("immersive", false, false);
+}
+$("camViewBtn").onclick = () => camView(!document.body.classList.contains("camFull"));
+$("cbExit").onclick = () => camView(false);
+$("cbStop").onclick = emergencyStop;
+$("cbArm").onclick = () => $("arm").click();
+$("cbCal").onclick = () => startCal("center");
+$("cbHead").onclick = () => startCal("head");
+$("cbFs").onclick = () => fsOpen();
+function camHud(){
+  if (!document.body.classList.contains("camFull")) return;
+  const partner = typeof Partner !== "undefined" && Partner.peerLive;
+  document.body.classList.toggle("partner", !!partner);
+  $("hS").textContent = (calRun ? $("calBox").textContent : stateText()) + (faceSeen ? ` · ${devDeg.toFixed(1)}°` : "");
+  $("hL").textContent = `Tolérance ${(tolV() / 100 * DEG100).toFixed(1)}° · d'affilée ${streak.toFixed(0)} s · record ${Math.floor(best)} s · cumul ${Math.floor(tot)} s · ${breaks} écart${breaks > 1 ? "s" : ""}` + (App.armed ? ` · ${$("sessT").textContent}` : " · non armé");
+  $("hVib").style.width = curVib + "%"; $("hStim").style.width = curStim + "%";
+  $("cbArm").textContent = App.armed ? "ARMÉ" : "Armer"; $("cbArm").classList.toggle("armed", App.armed);
+  drawRadar($("camRadar"));
+}
+
+/* ---------------- Galerie (images / vidéos du téléphone, gardées dans l'app) ---------------- */
+const Gal = {
+  db: null, items: [],
+  open(){ return this.db || (this.db = new Promise((res, rej) => { const r = indexedDB.open("bpEyes", 1); r.onupgradeneeded = () => r.result.createObjectStore("media", { autoIncrement: true }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); })); },
+  async store(mode){ return (await this.open()).transaction("media", mode).objectStore("media"); },
+  async load(){
+    try {
+      const st = await this.store("readonly"), all = await new Promise((res, rej) => { const q = st.getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+      this.items.forEach(i => URL.revokeObjectURL(i.url));
+      this.items = all.map(x => ({ video: /^video/.test(x.type), url: URL.createObjectURL(x.blob) }));
+    } catch (e) { log("Galerie : " + e.message); }
+    this.info();
+  },
+  async add(files){
+    const st = await this.store("readwrite");
+    for (const f of files) if (/^(image|video)\//.test(f.type)) st.add({ type: f.type, blob: f, name: f.name });
+    await new Promise(r => { st.transaction.oncomplete = r; st.transaction.onerror = r; });
+    await this.load(); log(`🖼️ ${files.length} fichier(s) ajouté(s) à la galerie.`);
+  },
+  async clear(){ const st = await this.store("readwrite"); st.clear(); await new Promise(r => { st.transaction.oncomplete = r; }); await this.load(); },
+  info(){ const v = this.items.filter(i => i.video).length; $("galInfo").textContent = this.items.length ? `Galerie : ${this.items.length - v} image(s), ${v} vidéo(s) — stockées seulement dans l'app.` : "Galerie vide : ajoute des images ou vidéos de ton téléphone."; },
+};
+$("galAdd").onclick = () => $("galIn").click();
+$("galIn").onchange = e => { const f = [...e.target.files]; e.target.value = ""; if (f.length) Gal.add(f); };
+$("galClear").onclick = async () => { if (await confirmDialog({ title: "Vider la galerie ?", html: "<p>Les images et vidéos ajoutées seront retirées de l'app (pas de ton téléphone).</p>", ok: "Vider" })) Gal.clear(); };
+Gal.load();
+
+/* ---------------- Plein écran de distraction ---------------- */
+const FS = { on: false, cur: null, curT: 0, mixI: 0, orbs: [], words: [], wordT: 0, msg: null, slideI: -1, slideT: 0, ph: 0, last: 0 };
+const fcv = $("fsCv"), fctx = fcv.getContext("2d");
+function fsOpen(){
+  FS.on = true; $("fs").classList.remove("hidden");
+  if (!nativeCall("immersive", true, $("dBright").checked)) { try { document.documentElement.requestFullscreen().catch(() => {}); } catch {} }
+  FS.cur = null; FS.curT = 0; FS.last = performance.now(); fsPlace(); requestAnimationFrame(fsLoop);
+  Partner.send(true); log("🌀 Plein écran de distraction ouvert.");
+}
+function fsClose(){
+  FS.on = false; $("fs").classList.add("hidden"); $("fsVid").pause(); $("fsVid").removeAttribute("src");
+  if (document.body.classList.contains("camFull")) nativeCall("immersive", true, false);
+  else if (!nativeCall("immersive", false, false)) { try { if (document.fullscreenElement) document.exitFullscreen(); } catch {} }
+  Partner.send(true);
+}
+$("fsBtn").onclick = () => FS.on ? fsClose() : fsOpen();
+$("fsStop").onclick = emergencyStop;
+(() => {   // « Quitter » : maintenir 1 s (évite une sortie par réflexe)
+  let t = null, t0 = 0; const b = $("fsExit"), bar = b.querySelector("i");
+  const end = () => { clearInterval(t); t = null; bar.style.width = "0"; };
+  b.onpointerdown = e => { e.preventDefault(); t0 = Date.now(); clearInterval(t); t = setInterval(() => { const p = (Date.now() - t0) / 1000; bar.style.width = Math.min(100, p * 100) + "%"; if (p >= 1) { end(); fsClose(); } }, 30); };
+  b.onpointerup = b.onpointerleave = b.onpointercancel = end;
+})();
+function fsPlace(){
+  const p = $("dCam").value, tg = $("fsTarget"); tg.classList.toggle("hidden", p === "none");
+  const pos = { tc: ["50%", "26px"], tl: ["26px", "26px"], tr: ["calc(100% - 26px)", "26px"], lc: ["26px", "50%"], rc: ["calc(100% - 26px)", "50%"] }[p] || ["50%", "26px"];
+  tg.style.left = pos[0]; tg.style.top = "calc(" + pos[1] + " + env(safe-area-inset-top))";
+}
+$("dCam").onchange = fsPlace;
+function fsHud(){
+  const fr = $("fsFrame"), col = unknown || !faceSeen ? "#ffb703" : looking ? "#4cc9f0" : broken ? "#ff2e4d" : "#ffb703";
+  fr.style.boxShadow = $("dStatus").checked ? `inset 0 0 0 6px ${col}, inset 0 0 40px ${col}` : "none";
+  $("fsHud").textContent = $("dStatus").checked ? `${stateText()}${App.armed ? " · " + streak.toFixed(0) + " s" : " · non armé"}` : "";
+  $("fsRadar").classList.toggle("hidden", !$("dRadar").checked); if ($("dRadar").checked) drawRadar($("fsRadar"));
+}
+function fsMode(now){
+  const m = $("dMode").value;
+  if (m !== "mix") return m === "photos" && !Gal.items.length ? "spiral" : m;
+  const list = ["spiral", "orbs", "words", ...(Gal.items.length ? ["photos"] : [])];
+  if (!FS.cur || now - FS.curT > num("dSwitch") * 1000) { FS.mixI = (FS.mixI + 1) % list.length; FS.curT = now; }
+  return list[FS.mixI % list.length];
+}
+function fsLoop(now){
+  if (!FS.on) return;
+  requestAnimationFrame(fsLoop);
+  const dt = Math.min(0.1, (now - FS.last) / 1000); FS.last = now;
+  const dpr = Math.min(1.5, devicePixelRatio || 1), W = Math.round(fcv.clientWidth * dpr), H = Math.round(fcv.clientHeight * dpr);
+  if (fcv.width !== W || fcv.height !== H) { fcv.width = W; fcv.height = H; FS.orbs = []; }
+  const sp = num("dSpeed") / 100 * ($("dEsc").checked ? 1 + Math.min(2, streak / 60) : 1);
+  FS.ph += dt * sp;
+  const mode = fsMode(now);
+  if (mode !== FS.cur) { FS.cur = mode; FS.words = []; FS.slideI = -1; FS.slideT = 0; $("fsImg").classList.add("hidden"); $("fsVid").classList.add("hidden"); $("fsVid").pause(); }
+  const c = fctx; c.clearRect(0, 0, W, H);
+  if (mode === "spiral") drawSpiral(c, W, H);
+  else if (mode === "orbs") drawOrbs(c, W, H, dt * sp);
+  else if (mode === "words") drawWords(c, W, H, now, sp, true);
+  else if (mode === "photos") slides(now);
+  if (FS.msg && now < FS.msg.until) drawMsg(c, W, H, FS.msg.text, now);
+}
+/* zone éloignée de l'objectif à fixer : les animations s'y concentrent pour attirer les yeux loin de la cible */
+function farZone(W, H){
+  const z = { tc: [0, .45, 1, 1], tl: [.3, .45, 1, 1], tr: [0, .45, .7, 1], lc: [.45, 0, 1, 1], rc: [0, 0, .55, 1] }[$("dCam").value] || [0, 0, 1, 1];
+  const f = { x0: z[0] * W, y0: z[1] * H, x1: z[2] * W, y1: z[3] * H }; f.cx = (f.x0 + f.x1) / 2; f.cy = (f.y0 + f.y1) / 2;
+  if ($("dCam").value === "tc" || $("dCam").value === "tl" || $("dCam").value === "tr") f.cy = f.y0 + (f.y1 - f.y0) * 0.6;
+  return f;
+}
+function drawSpiral(c, W, H){
+  const F = farZone(W, H), cx = F.cx, cy = F.cy, R = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy)), t = FS.ph;
+  c.fillStyle = `hsl(${(t * 20) % 360},60%,6%)`; c.fillRect(0, 0, W, H);
+  c.save(); c.translate(cx, cy); c.rotate(t * 2.2); c.lineWidth = R / 14; c.lineCap = "round";
+  for (let arm = 0; arm < 2; arm++) {
+    c.strokeStyle = arm ? `hsl(${(t * 40 + 180) % 360},85%,60%)` : `hsl(${(t * 40) % 360},85%,60%)`;
+    c.beginPath();
+    for (let th = 0; th < 30; th += 0.08) { const r = th / 30 * R * 1.1, a = th + arm * Math.PI; th ? c.lineTo(r * Math.cos(a), r * Math.sin(a)) : c.moveTo(0, 0); }
+    c.stroke();
+  }
+  c.restore();
+  const p = 0.5 + 0.5 * Math.sin(t * 5); c.fillStyle = `rgba(255,255,255,${0.5 + 0.4 * p})`; c.beginPath(); c.arc(cx, cy, R * 0.03 * (1 + p), 0, 7); c.fill();
+}
+function drawOrbs(c, W, H, d){
+  // orbes lents et doux (pas de clignotement ni d'accélérations brusques), dans la zone éloignée de l'objectif
+  const S = Math.min(W, H), F = farZone(W, H);
+  if (!FS.orbs.length) for (let i = 0; i < 4; i++) FS.orbs.push({ x: F.x0 + Math.random() * (F.x1 - F.x0), y: F.y0 + Math.random() * (F.y1 - F.y0), vx: (Math.random() - 0.5) * S * 0.25, vy: (Math.random() - 0.5) * S * 0.25, r: S * (0.07 + Math.random() * 0.06), h: Math.random() * 360, p: Math.random() * 6 });
+  c.fillStyle = "#0a0614"; c.fillRect(0, 0, W, H);
+  for (const o of FS.orbs) {
+    o.x += o.vx * d; o.y += o.vy * d; o.h = (o.h + d * 12) % 360;
+    if (o.x < F.x0 + o.r || o.x > F.x1 - o.r) { o.vx *= -1; o.x = clamp(o.x, F.x0 + o.r, F.x1 - o.r); }
+    if (o.y < F.y0 + o.r || o.y > F.y1 - o.r) { o.vy *= -1; o.y = clamp(o.y, F.y0 + o.r, F.y1 - o.r); }
+    const pr = o.r * (1 + 0.08 * Math.sin(FS.ph * 0.8 + o.p)), g = c.createRadialGradient(o.x, o.y, 0, o.x, o.y, pr * 2);
+    g.addColorStop(0, `hsla(${o.h},70%,62%,.85)`); g.addColorStop(0.4, `hsla(${o.h},70%,50%,.4)`); g.addColorStop(1, `hsla(${o.h},70%,45%,0)`);
+    c.fillStyle = g; c.beginPath(); c.arc(o.x, o.y, pr * 2, 0, 7); c.fill();
+  }
+}
+function wordList(){ return $("dWords").value.split("\n").map(x => x.trim()).filter(Boolean); }
+function drawWords(c, W, H, now, sp, bg){
+  if (bg) { c.fillStyle = `hsl(${(FS.ph * 15) % 360},50%,8%)`; c.fillRect(0, 0, W, H); }
+  const L = wordList(); if (!L.length) return;
+  const F = farZone(W, H);
+  if (now - FS.wordT > 1400 / sp) { FS.wordT = now; FS.words.push({ t: L[Math.floor(Math.random() * L.length)], x: (F.x0 + (F.x1 - F.x0) * (0.2 + Math.random() * 0.6)) / W, y: (F.y0 + (F.y1 - F.y0) * (0.2 + Math.random() * 0.6)) / H, s: 0.06 + Math.random() * 0.07, r: (Math.random() - 0.5) * 0.4, h: Math.random() * 360, t0: now }); if (FS.words.length > 6) FS.words.shift(); }
+  const S = Math.min(W, H);
+  for (const w of FS.words) {
+    const age = (now - w.t0) / (3000 / sp); if (age > 1) continue;
+    c.save(); c.globalAlpha = Math.sin(Math.PI * age); c.translate(w.x * W, w.y * H); c.rotate(w.r); c.scale(1 + age * 0.3, 1 + age * 0.3);
+    c.font = `900 ${Math.round(w.s * S)}px system-ui`; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillStyle = `hsl(${w.h},90%,70%)`; c.shadowColor = `hsl(${w.h},100%,50%)`; c.shadowBlur = 20; c.fillText(w.t, 0, 0); c.restore();
+  }
+}
+function drawMsg(c, W, H, text, now){
+  const S = Math.min(W, H), pulse = 1 + 0.03 * Math.sin(now / 300), F = farZone(W, H);
+  c.save(); c.translate(F.cx, F.cy); c.scale(pulse, pulse);
+  c.font = `900 ${Math.round(S * 0.09)}px system-ui`; c.textAlign = "center"; c.textBaseline = "middle";
+  c.fillStyle = "#000a"; const w = Math.min(W * 0.95, c.measureText(text).width + S * 0.1); c.fillRect(-w / 2, -S * 0.08, w, S * 0.16);
+  c.fillStyle = "#fff"; c.shadowColor = "#ff4d8d"; c.shadowBlur = 25; c.fillText(text, 0, 0, W * 0.9); c.restore();
+}
+function slides(now){
+  const N = Gal.items.length; if (!N) return;
+  if (FS.slideI < 0 || now - FS.slideT > num("dSlide") * 1000) {
+    FS.slideT = now; FS.slideI = N > 1 ? (FS.slideI + 1 + Math.floor(Math.random() * (N - 1))) % N : 0;
+    const it = Gal.items[FS.slideI], img = $("fsImg"), vid = $("fsVid");
+    if (it.video) { img.classList.add("hidden"); vid.muted = !$("dSound").checked; vid.src = it.url; vid.classList.remove("hidden"); vid.play().catch(() => {}); }
+    else { vid.pause(); vid.classList.add("hidden"); img.src = it.url; img.classList.remove("hidden"); }
+  }
+}
+function fsMessage(text){ text = String(text || "").slice(0, 60).trim(); if (!text) return; FS.msg = { text, until: performance.now() + 8000 }; log("💬 Message affiché : " + text); }
+
+/* ---------------- Initialisation ---------------- */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Eye Contact", roleLabels: { vib: "Vibration (regard soutenu)", stim: "Shock (regard détourné)" }, emergencyStop, onDisconnect: () => setArmed(false) });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", curVib, true), 2000); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la séance pour tester."); fireShock("test"); consec = 0; };
+const KEY = "eyesCfg";
+const FIELDS = ["facing","camRes","tol","grace","blinkMs","smooth","vibBase","vibRamp","vibTop","stimLvl","pulseMs","stimCd","stimEsc","maxVib","maxStim","sessionMax","dMode","dSpeed","dSwitch","dSlide","dWords","dCam"];
+const CHECKS = ["lostIsBreak","sound","voice","camAuto","dEsc","dSound","dStatus","dRadar","dBright","dAuto"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS);
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+Cfg.load(KEY, FIELDS, CHECKS);
+cal = store.get("eyesCal", null); if (cal && cal.v !== 2) cal = null;   // ancienne calibration (avant le suivi de l'iris)
+applyEquip();
+Game.init("eyes", {
+  apply: (p, on) => {
+    ["tol", "grace"].forEach(id => { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; });
+    if (on) { $("tol").value = p.tol; $("grace").value = p.grace; }
+  },
+});
+Partner.init("eyes", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Écart du regard", v: faceSeen ? Math.round(dev) : 100, max: 100, unit: " %" },
+    phase: $("banner").textContent + (App.armed ? ` · ${streak.toFixed(0)} s` : ""),
+    app: { kind: "eyes", fs: FS.on, mode: $("dMode").value },
+    chips: [["Écart", faceSeen ? devDeg.toFixed(1) + "°" : "—"], ["D'affilée", streak.toFixed(0) + " s"], ["Record", Math.floor(best) + " s"], ["Cumul", Math.floor(tot) + " s"], ["Détournés", breaks], ["Tolérance", tolV() + " %"], ...(Equip.stim ? [["Shocks", shockN]] : [])],
+  }),
+  actions: () => !App.armed ? [] : [
+    { id: "look", label: "👁️ « Regarde-moi ! »" },
+    { id: "fs", label: FS.on ? "🖥️ Fermer le plein écran" : "🌀 Plein écran de distraction" },
+    { id: "tolMinus", label: "🎯 Tolérance −5 %" }, { id: "tolPlus", label: "🎯 Tolérance +5 %" },
+    ...(Partner.can.stim ? [{ id: "shock", label: "⚡ Shock" }] : []),
+  ],
+  doAction: id => {
+    if (!App.armed) return;
+    if (id === "look") { Speak.say("Regarde-moi dans les yeux"); beep(880, 150, 2); log("🎮 « Regarde-moi ! »"); if (FS.on) fsMessage("Regarde-moi"); }
+    else if (id === "fs") FS.on ? fsClose() : fsOpen();
+    else if (id === "tolMinus" || id === "tolPlus") { if ($("tol").disabled && !Partner.ms) return log("Tolérance réglée par la carrière."); $("tol").value = clamp(num("tol") + (id === "tolPlus" ? 5 : -5), 5, 90); log("🎮 Tolérance → " + num("tol") + " %"); }
+    else if (id === "shock" && Partner.can.stim && curStim === 0) fireShock("partenaire");
+  },
+  onApp: d => {
+    if (d.op === "msg") { fsMessage(d.text); if (!FS.on) Speak.say(String(d.text || "").slice(0, 60)); }
+    else if (d.op === "mode" && ["mix", "spiral", "orbs", "words", "photos"].includes(d.mode)) { $("dMode").value = d.mode; log("🎮 Distraction → " + $("dMode").selectedOptions[0].textContent); }
+    else if (d.op === "fs") d.on ? (!FS.on && fsOpen()) : (FS.on && fsClose());
+    Partner.send(true);
+  },
+});
+setInterval(tick, 33);
+log("Prêt. Démarre la caméra, calibre (étapes 1 et 2), puis « Armer » : le plein écran de distraction s'ouvre.");
+</script>
+</body>
+</html>

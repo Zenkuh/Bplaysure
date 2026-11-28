@@ -1,0 +1,10 @@
+{
+  "name": "BPlaysure",
+  "short_name": "BPlaysure",
+  "start_url": "index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121216",
+  "theme_color": "#121216",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

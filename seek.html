@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f13">
+<title>Vibe &amp; Seek</title>
+<link rel="stylesheet" href="common.css">
+<style>
+  #map{width:100%;height:52vh;min-height:280px;border-radius:12px;display:block;background:#1d2330}
+  .mapWrap{position:relative}
+  .mapBtns{position:absolute;right:8px;top:8px;display:flex;flex-direction:column;gap:6px}
+  .mapBtns button{width:42px;height:42px;padding:0;font-size:18px;border-radius:10px;background:#000b;border:1px solid #fff3}
+  .mapDraw{position:absolute;left:8px;right:8px;bottom:8px;display:flex;gap:6px;flex-wrap:wrap;justify-content:center;z-index:2}
+  .mapDraw button{height:40px;padding:0 12px;font-size:13.5px;font-weight:700;border-radius:12px;background:#000c;border:1px solid #fff3;color:#fff}
+  .mapDraw button.sel{background:var(--acc);color:#000;border-color:var(--acc)}
+  .mapDraw.hidden,.mapDraw button.hidden{display:none}
+  #modeTip{position:absolute;left:8px;top:8px;right:60px;background:#000b;border-radius:10px;padding:6px 10px;font-size:12.5px}
+  #digBtn{width:100%;font-size:20px;font-weight:800;padding:14px;margin-top:6px;border-radius:14px;background:#1e5c32;border:1px solid #52d273;color:#fff}
+  #digBtn:disabled{opacity:.45}
+  .tokens{letter-spacing:2px}
+  .seg2{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+  .seg2 button.sel{background:var(--acc);color:#000;border-color:var(--acc)}
+  .stGrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:13px}
+  .stGrid b{color:var(--fg)}
+  #resTitle{font-size:22px;font-weight:800;text-align:center;margin:4px 0 8px}
+  .joy{display:grid;grid-template-columns:repeat(3,52px);gap:6px;justify-content:center;margin:8px 0}
+  .joy button{height:44px;padding:0}
+</style>
+</head>
+<body>
+<div class="top">
+  <header>
+    <button id="menuBtn" class="icon" title="Menu (arrête tout)">☰</button>
+    <h1>Vibe &amp; Seek</h1>
+    <span id="connState" class="pill">déconnecté</span>
+  </header>
+  <div class="dock">
+    <div class="banner" id="banner" style="font-size:16px">🗺️ Prépare la zone, puis « Armer »</div>
+    <div class="stat"><span>Proximité</span><div class="meter"><div id="proxBar" class="accC"></div></div><span id="proxVal">—</span></div>
+    <div class="stat" data-need="vib"><span>Vibration</span><div class="meter"><div id="vibBar" class="vibC"></div></div><span id="vibVal">0</span></div>
+    <div class="stat hidden" id="stimRow" data-need="stim"><span>Shock</span><div class="meter"><div id="stimBar" class="stimC"></div></div><span id="stimVal">0</span></div>
+    <div class="chips">
+      <span id="distChip">Distance <b id="distV">—</b></span>
+      <span>Jetons <b id="tokV" class="tokens">—</b></span>
+      <span>Trésors <b id="treV">—</b></span>
+      <span>Parcouru <b id="walkV">0 m</b></span>
+      <span>Temps <b id="timeV">0:00</b></span>
+      <span>GPS <b id="gpsV">—</b></span>
+    </div>
+    <button id="digBtn" class="hidden">⛏️ Creuser ici</button>
+    <div id="gDock" class="hidden"></div>
+  </div>
+</div>
+
+<main>
+  <details class="card hidden" id="secResult" open>
+    <summary>📊 Résultat de la partie</summary>
+    <div class="body"><div id="resTitle"></div><div class="stGrid" id="resGrid"></div><p class="muted">Ton parcours, tes fouilles et le trésor sont affichés sur la carte.</p></div>
+  </details>
+
+  <details class="card" id="secGame" open></details>
+  <details class="card" id="conn"></details>
+
+  <details class="card" id="secMap" open>
+    <summary>🗺️ Carte & zone de jeu <small id="zoneSum"></small></summary>
+    <div class="body">
+      <div class="mapWrap">
+        <canvas id="map"></canvas>
+        <div id="modeTip" class="hidden"></div>
+        <div class="mapBtns">
+          <button id="meBtn" title="Me centrer">📍</button>
+          <button id="fitBtn" title="Voir toute la zone">🔲</button>
+          <button id="layerBtn" title="Plan / satellite">🛰️</button>
+        </div>
+        <div class="mapDraw" id="mapDraw">
+          <button id="drawZone">✏️ Zone</button>
+          <button id="drawExcl">⛔ Interdite</button>
+          <button id="undoPt" title="Annuler le dernier point">↩️</button>
+          <button id="clearPoly" title="Tout effacer">🗑️</button>
+          <button id="placeTre">🎁 Placer le trésor</button>
+        </div>
+      </div>
+      <label class="f keep"><span>Zone de jeu</span>
+        <select id="zoneType"><option value="circle" selected>Cercle autour de ma position au départ</option><option value="poly">Zone dessinée sur la carte</option></select>
+      </label>
+      <label class="f" id="zoneRRow"><span>Rayon du cercle (m)</span><input id="zoneR" type="number" min="20" max="5000" step="10" value="150"></label>
+      <div id="polyTools" class="toCfg">
+        <div class="row"><select id="savedZones" style="flex:1"><option value="">— zones enregistrées —</option></select><button id="delZone">✕</button></div>
+        <div class="row"><input id="zoneName" type="text" placeholder="Nom de la zone" style="flex:1"><button id="saveZone">💾 Enregistrer</button></div>
+        <p class="muted">Dessine la zone avec les boutons en bas de la carte (onglet 🎮 Jeu) : touche la carte pour placer les coins. Les zones interdites (route, rivière, propriété privée…) excluent le trésor ; tu peux en dessiner plusieurs.</p>
+      </div>
+      <label class="f keep"><span>Trésor</span>
+        <select id="treasureMode"><option value="random" selected>Caché au hasard dans la zone</option><option value="manual">Placé à la main sur la carte</option></select>
+      </label>
+      <div id="manualTools" class="toCfg"><span class="muted" id="treInfo"></span></div>
+    </div>
+  </details>
+
+  <details class="card" id="secRules">
+    <summary>🎯 Règles</summary>
+    <div class="body">
+      <label class="f"><span>Trésors à trouver d'affilée</span><input id="nTre" type="number" min="1" max="20" value="1"></label>
+      <label class="f"><span>Jetons (fouilles) par trésor</span><input id="tokens" type="number" min="1" max="30" value="5"></label>
+      <label class="f"><span>Rayon où les vibrations commencent (m)</span><input id="hapR" type="number" min="10" max="2000" step="5" value="200"></label>
+      <label class="f"><span>Rayon du trésor (m)</span><input id="treR" type="number" min="2" max="100" value="10"></label>
+      <label class="f"><span>Temps limite (min, 0 = aucun)</span><input id="timeMin" type="number" min="0" max="600" value="0"></label>
+      <label class="f"><span>Distance minimale entre le départ et le trésor (m)</span><input id="minStart" type="number" min="0" max="2000" value="40"></label>
+      <label class="f"><span>Afficher la distance</span><input id="showDist" type="checkbox"></label>
+      <label class="f"><span>Afficher la proximité (%)</span><input id="showInt" type="checkbox" checked></label>
+      <label class="f"><span>Afficher la distance sur les fouilles ratées</span><input id="showMarks" type="checkbox" checked></label>
+      <label class="f"><span>Afficher le cercle des vibrations autour de moi</span><input id="showHapR" type="checkbox"></label>
+      <label class="f"><span>Montrer le trésor (triche / test)</span><input id="showTre" type="checkbox"></label>
+      <p class="muted">Une fouille réussit si le trésor est dans son rayon, en tenant compte de la précision du GPS. Chaque fouille ratée coûte un jeton.</p>
+    </div>
+  </details>
+
+  <details class="card" id="secHaptic" data-need="vib">
+    <summary>〰️ Vibrations <small id="algoSum"></small></summary>
+    <div class="body">
+      <label class="f"><span>Algorithme</span>
+        <select id="algo">
+          <option value="pulse" selected>Pulsations & fondu</option>
+          <option value="dpulse">Pulsations selon la distance</option>
+          <option value="direct">Distance = intensité</option>
+          <option value="ramp">Rampe douce</option>
+        </select>
+      </label>
+      <p class="muted" id="algoInfo"></p>
+      <label class="f"><span>Durée d'un cycle (ms)</span><input id="loopMs" type="number" min="1000" max="10000" step="250" value="3000"></label>
+      <label class="f"><span>Déplacement compté (m)</span><input id="moveThr" type="number" min="0.5" max="20" step="0.5" value="2"></label>
+      <label class="f"><span>Intensité minimale (%)</span><input id="intMin" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>Intensité maximale (%)</span><input id="intMax" type="number" min="1" max="100" value="60"></label>
+      <label class="f"><span>Célébration vibrante à la victoire</span><input id="victoryVib" type="checkbox" checked></label>
+    </div>
+  </details>
+
+  <details class="card" id="secStim" data-need="stim">
+    <summary>⚡ Shock</summary>
+    <div class="body">
+      <label class="f"><span>Shock à chaque fouille ratée</span><input id="shockMiss" type="checkbox" checked></label>
+      <label class="f"><span>Shock si tu sors de la zone</span><input id="shockOut" type="checkbox"></label>
+      <label class="f"><span>… après (s) hors de la zone</span><input id="outS" type="number" min="3" max="300" value="15"></label>
+      <label class="f"><span>Intensité du shock (%)</span><input id="stimLvl" type="number" min="0" max="100" value="15"></label>
+      <label class="f"><span>+ par fouille ratée (%)</span><input id="stimEsc" type="number" min="0" max="30" value="3"></label>
+      <label class="f"><span>Durée du shock (ms)</span><input id="pulseMs" type="number" min="100" max="2000" step="50" value="500"></label>
+    </div>
+  </details>
+
+  <details class="card" id="secGps">
+    <summary>📡 Position <small id="gpsSum"></small></summary>
+    <div class="body">
+      <div class="row"><button id="gpsBtn" class="primary">Activer le GPS</button></div>
+      <p class="muted" id="gpsInfo">La position sert uniquement au jeu, sur ce téléphone. Elle n'est jamais envoyée, même à la télécommande (qui ne voit que la distance au trésor).</p>
+      <label class="f"><span>Position simulée (test à la maison)</span><input id="simPos" type="checkbox"></label>
+      <div id="simTools" class="hidden">
+        <p class="muted">Touche la carte pour te déplacer, ou utilise les flèches (pas de 5 m).</p>
+        <div class="joy"><span></span><button data-m="n">⬆️</button><span></span><button data-m="w">⬅️</button><button data-m="c">📍</button><button data-m="e">➡️</button><span></span><button data-m="s">⬇️</button><span></span></div>
+      </div>
+    </div>
+  </details>
+
+  <details class="card" id="secLimits">
+    <summary>🛡️ Limites & tests</summary>
+    <div class="body">
+      <label class="f" data-need="vib"><span>Plafond vibration (%)</span><input id="maxVib" type="number" min="0" max="100" value="80"></label>
+      <label class="f" data-need="stim"><span>Plafond shock (%)</span><input id="maxStim" type="number" min="0" max="100" value="30"></label>
+      <label class="f"><span>Fin automatique après (min, 0 = jamais)</span><input id="sessionMax" type="number" min="0" max="720" value="180"></label>
+      <label class="f"><span>Sons</span><input id="sound" type="checkbox" checked></label>
+      <label class="f"><span>Annonces vocales</span><input id="voice" type="checkbox" checked></label>
+      <div class="row"><button id="testVib" data-need="vib">Test vibration</button><button id="testStim" data-need="stim">Test shock</button></div>
+      <div class="row"><button id="saveCfg">Sauvegarder</button><button id="resetCfg">Par défaut</button></div>
+    </div>
+  </details>
+
+  <details class="card" id="secLog">
+    <summary>📋 Journal</summary>
+    <div class="body"><div id="log"></div></div>
+  </details>
+</main>
+
+<nav class="actions">
+  <button id="arm">Armer</button>
+  <button id="estop">ARRÊT</button>
+</nav>
+
+<script src="common.js"></script>
+<script src="outdoor.js"></script>
+<script src="partner.js"></script>
+<script src="game.js"></script>
+<script src="geomap.js"></script>
+<script>
+"use strict";
+/* ======================================================================
+ * Vibe & Seek — chasse au trésor GPS guidée par les vibrations.
+ * Adaptation du jeu Android « Vibe & Seek » de Fyustorm (Apache 2.0) :
+ * mêmes règles (jetons, rayons, 4 algorithmes de vibration, suspense,
+ * statistiques), réécrit pour BPlaysure (carte OpenStreetMap, carrière,
+ * télécommande, shock, écran éteint).
+ * ====================================================================== */
+
+/* ---------------- Position ---------------- */
+let me = null, meAcc = 30, meT = 0;                 // [la, lo]
+const sim = () => $("simPos").checked;
+function onPos(p){
+  if (sim()) return;
+  setMe([p.la, p.lo], p.acc);
+}
+Sensors.onPos = onPos;
+function setMe(p, acc){
+  const first = !me; me = p; meAcc = acc; meT = Date.now();
+  if (first) { map.setView(me, 17); log(`📍 Position trouvée (±${Math.round(acc)} m).`); }
+  if (App.armed && G.state === "play") G.onMove(p, acc);
+  map.dirty = true;
+}
+function startGps(){
+  Sensors.start({ gps: true, pos: true, accel: false, mic: false }).catch(e => log("GPS : " + e.message));
+  $("gpsBtn").textContent = "GPS actif"; log("GPS démarré" + (Sensors.native ? " (fonctionne écran éteint)." : "."));
+}
+$("gpsBtn").onclick = startGps;
+$("simPos").onchange = () => {
+  $("simTools").classList.toggle("hidden", !sim());
+  if (sim() && !me) setMe(map.c.slice(), 5);
+  if (sim()) log("🧪 Position simulée : touche la carte pour te déplacer.");
+};
+document.querySelectorAll(".joy button").forEach(b => b.onclick = () => {
+  if (!sim()) return;
+  if (b.dataset.m === "c") { map.setView(me || map.c); return; }
+  const d = { n: [5, 0], s: [-5, 0], e: [0, 5], w: [0, -5] }[b.dataset.m];
+  setMe(Geo.offset(me || map.c, d[0], d[1]), 5);
+});
+
+/* ---------------- Zone ---------------- */
+let poly = [], excl = [], drawTarget = null, manualTre = null, placing = false;
+const zoneStore = () => store.get("seekZones", []);
+function zoneNow(center){
+  if ($("zoneType").value === "circle") { const c = center || (G.zone && G.zone.type === "circle" ? G.zone.c : me); return c ? { type: "circle", c, r: num("zoneR") } : null; }
+  return poly.length >= 3 ? { type: "poly", poly: poly.slice(), excl: excl.filter(e => e.length >= 3) } : null;
+}
+function refreshZoneUI(){
+  const t = $("zoneType").value;
+  $("zoneRRow").classList.toggle("hidden", t !== "circle");
+  $("polyTools").classList.toggle("hidden", t !== "poly");
+  $("manualTools").classList.toggle("hidden", $("treasureMode").value !== "manual");
+  $("drawZone").classList.toggle("sel", drawTarget === "zone");
+  $("drawExcl").classList.toggle("sel", drawTarget === "excl");
+  $("placeTre").classList.toggle("sel", placing);
+  // boutons de dessin posés sur la carte (onglet Jeu)
+  ["drawZone", "drawExcl", "undoPt", "clearPoly"].forEach(id => $(id).classList.toggle("hidden", t !== "poly"));
+  $("placeTre").classList.toggle("hidden", $("treasureMode").value !== "manual");
+  $("mapDraw").classList.toggle("hidden", App.armed || (t !== "poly" && $("treasureMode").value !== "manual"));
+  const z = zoneNow();
+  $("zoneSum").textContent = !z ? (t === "poly" ? "à dessiner" : "en attente du GPS") : `${t === "circle" ? "cercle" : "zone dessinée"} · ${fmtArea(Geo.area(z))}` + (z.excl && z.excl.length ? ` · ${z.excl.length} interdite${z.excl.length > 1 ? "s" : ""}` : "");
+  $("treInfo").textContent = manualTre ? "✅ trésor placé (il sera caché pendant la partie)" : "aucun trésor placé";
+  const tip = placing ? "🎁 Touche l'endroit où cacher le trésor" : drawTarget === "zone" ? "✏️ Touche la carte pour ajouter les coins de la zone" : drawTarget === "excl" ? "⛔ Touche la carte pour dessiner la zone interdite" : sim() ? "🧪 Touche la carte pour déplacer ta position simulée" : "";
+  $("modeTip").textContent = tip; $("modeTip").classList.toggle("hidden", !tip);
+  map.dirty = true;
+}
+const fmtArea = a => a > 1e6 ? (a / 1e6).toFixed(2) + " km²" : a > 1e4 ? (a / 1e4).toFixed(1) + " ha" : Math.round(a) + " m²";
+$("zoneType").onchange = refreshZoneUI; $("zoneR").oninput = refreshZoneUI;
+$("treasureMode").onchange = () => { if ($("treasureMode").value !== "manual") { placing = false; } refreshZoneUI(); };
+$("drawZone").onclick = () => { if (App.armed) return; placing = false; drawTarget = drawTarget === "zone" ? null : "zone"; refreshZoneUI(); };
+$("drawExcl").onclick = () => {
+  if (App.armed) return; placing = false;
+  if (drawTarget === "excl") drawTarget = null; else { drawTarget = "excl"; if (!excl.length || excl[excl.length - 1].length) excl.push([]); }
+  refreshZoneUI();
+};
+$("undoPt").onclick = () => { if (App.armed) return; if (drawTarget === "excl" && excl.length) { const e = excl[excl.length - 1]; e.pop(); if (!e.length && excl.length > 1) excl.pop(); } else poly.pop(); refreshZoneUI(); };
+$("clearPoly").onclick = () => { if (App.armed) return; poly = []; excl = []; refreshZoneUI(); };
+$("placeTre").onclick = () => { if (App.armed) return; drawTarget = null; placing = !placing; refreshZoneUI(); };
+function fillSaved(){
+  const s = $("savedZones"), cur = s.value; s.innerHTML = '<option value="">— zones enregistrées —</option>';
+  zoneStore().forEach((z, i) => { const o = document.createElement("option"); o.value = i; o.textContent = z.name; s.appendChild(o); });
+  s.value = cur;
+}
+$("saveZone").onclick = () => {
+  if (poly.length < 3) return log("Dessine d'abord une zone (au moins 3 coins).");
+  const name = $("zoneName").value.trim() || "Zone " + new Date().toLocaleDateString();
+  const all = zoneStore().filter(z => z.name !== name); all.push({ name, poly, excl: excl.filter(e => e.length >= 3) });
+  store.set("seekZones", all); fillSaved(); log("💾 Zone « " + name + " » enregistrée.");
+};
+$("savedZones").onchange = () => {
+  const z = zoneStore()[+$("savedZones").value]; if (!z || App.armed) return;
+  poly = z.poly.map(p => p.slice()); excl = (z.excl || []).map(e => e.map(p => p.slice())); $("zoneName").value = z.name;
+  $("zoneType").value = "poly"; drawTarget = null; refreshZoneUI(); map.fit(Geo.bbox(zoneNow()));
+};
+$("delZone").onclick = async () => {
+  const i = $("savedZones").value; if (i === "") return;
+  const z = zoneStore()[+i];
+  if (!await confirmDialog({ title: "Supprimer la zone ?", html: `<p>« ${z.name} » sera supprimée.</p>`, ok: "Supprimer" })) return;
+  store.set("seekZones", zoneStore().filter((_, k) => k !== +i)); $("savedZones").value = ""; fillSaved();
+};
+
+/* ---------------- Carte ---------------- */
+const map = new GeoMap($("map"), { zoom: 16 });
+map.onTap = p => {
+  if (placing) { manualTre = p; placing = false; log("🎁 Trésor placé."); refreshZoneUI(); return; }
+  if (drawTarget === "zone") { poly.push(p); refreshZoneUI(); return; }
+  if (drawTarget === "excl") { excl[excl.length - 1].push(p); refreshZoneUI(); return; }
+  if (sim()) setMe(p, 5);
+};
+$("meBtn").onclick = () => { if (me) map.setView(me, Math.max(map.z, 17)); else log("Position inconnue : active le GPS."); };
+$("fitBtn").onclick = () => { const z = G.zone || zoneNow(); if (z) map.fit(Geo.bbox(z)); };
+$("layerBtn").onclick = () => { map.src = map.src === "osm" ? "sat" : "osm"; map.dirty = true; };
+map.onDraw = (x, m) => {
+  const S = p => m.toScreen(p), rpx = r => r / m.mPerPx();
+  const path = P => { x.beginPath(); P.forEach((p, i) => { const s = S(p); i ? x.lineTo(s[0], s[1]) : x.moveTo(s[0], s[1]); }); x.closePath(); };
+  const z = G.zone || zoneNow();
+  // zone (rouge translucide), zones interdites en creux
+  if (z) {
+    x.fillStyle = "#ff4d6d26"; x.strokeStyle = "#ff4d6d"; x.lineWidth = 2;
+    if (z.type === "circle") { const c = S(z.c); x.beginPath(); x.arc(c[0], c[1], rpx(z.r), 0, 7); x.fill(); x.stroke(); }
+    else {
+      x.beginPath();
+      [z.poly, ...(z.excl || [])].forEach(P => P.forEach((p, i) => { const s = S(p); i ? x.lineTo(s[0], s[1]) : x.moveTo(s[0], s[1]); }));
+      x.fill("evenodd"); path(z.poly); x.stroke();
+      x.strokeStyle = "#aaa"; x.setLineDash([5, 4]); (z.excl || []).forEach(e => { path(e); x.stroke(); }); x.setLineDash([]);
+    }
+  }
+  // dessin en cours (points)
+  if (!App.armed && $("zoneType").value === "poly") {
+    x.fillStyle = "#fff"; poly.forEach(p => { const s = S(p); x.beginPath(); x.arc(s[0], s[1], 4, 0, 7); x.fill(); });
+    if (poly.length >= 2 && poly.length < 3) { x.strokeStyle = "#ff4d6d"; x.beginPath(); poly.forEach((p, i) => { const s = S(p); i ? x.lineTo(s[0], s[1]) : x.moveTo(s[0], s[1]); }); x.stroke(); }
+    x.fillStyle = "#bbb"; excl.forEach(e => e.forEach(p => { const s = S(p); x.fillRect(s[0] - 3, s[1] - 3, 6, 6); }));
+    excl.filter(e => e.length >= 2).forEach(e => { x.strokeStyle = "#bbb"; x.setLineDash([5, 4]); path(e); x.stroke(); x.setLineDash([]); });
+  }
+  // parcours
+  if (G.hist.length > 1 && (G.state !== "play" || G.showPath)) {
+    x.strokeStyle = "#4cc9f0cc"; x.lineWidth = 3; x.beginPath();
+    G.hist.forEach((h, i) => { const s = S(h); i ? x.lineTo(s[0], s[1]) : x.moveTo(s[0], s[1]); }); x.stroke();
+  }
+  // fouilles
+  G.marks.forEach(k => {
+    const s = S(k.p); x.fillStyle = k.ok ? "#52d273" : "#ffb703"; x.beginPath(); x.arc(s[0], s[1], 6, 0, 7); x.fill();
+    x.strokeStyle = "#000"; x.lineWidth = 1; x.stroke();
+    if ($("showMarks").checked || G.state !== "play") { x.fillStyle = "#fff"; x.font = "bold 12px system-ui"; x.fillText(k.ok ? "🏆" : Math.round(k.d) + " m", s[0] + 8, s[1] + 4); }
+  });
+  // trésor(s) : seulement à la fin, en mode triche, ou placé à la main avant la partie
+  const showT = G.state === "won" || G.state === "lost" || $("showTre").checked;
+  const T = App.armed || G.state === "won" || G.state === "lost" ? (showT ? [...G.found, G.tre].filter(Boolean) : []) : (manualTre && $("treasureMode").value === "manual" ? [manualTre] : []);
+  T.forEach(t => { const s = S(t); x.fillStyle = "#52d27355"; x.strokeStyle = "#52d273"; x.lineWidth = 2; x.beginPath(); x.arc(s[0], s[1], Math.max(6, rpx(num("treR"))), 0, 7); x.fill(); x.stroke(); x.font = "18px system-ui"; x.fillText("🎁", s[0] - 9, s[1] + 6); });
+  // joueur
+  if (me) {
+    const s = S(me);
+    if ($("showHapR").checked) { x.strokeStyle = "#e056fd"; x.setLineDash([6, 5]); x.lineWidth = 2; x.beginPath(); x.arc(s[0], s[1], rpx(num("hapR")), 0, 7); x.stroke(); x.setLineDash([]); }
+    x.fillStyle = "#4cc9f033"; x.beginPath(); x.arc(s[0], s[1], Math.max(8, rpx(meAcc)), 0, 7); x.fill();
+    x.fillStyle = "#4cc9f0"; x.strokeStyle = "#fff"; x.lineWidth = 3; x.beginPath(); x.arc(s[0], s[1], 8, 0, 7); x.fill(); x.stroke();
+    if (G.suspense) {         // radar pendant la fouille
+      const t = (Date.now() - G.suspense.t0) / 1000, R = 90;
+      x.strokeStyle = "#52d273"; x.lineWidth = 2;
+      for (let k = 0; k < 3; k++) { const r = ((t * 60 + k * 30) % R); x.globalAlpha = 1 - r / R; x.beginPath(); x.arc(s[0], s[1], r, 0, 7); x.stroke(); }
+      x.globalAlpha = 1; const a = t * 4;
+      x.beginPath(); x.moveTo(s[0], s[1]); x.lineTo(s[0] + Math.cos(a) * R, s[1] + Math.sin(a) * R); x.stroke();
+      m.dirty = true;
+    }
+  }
+};
+
+/* ---------------- Algorithmes de vibration (d'après Vibe & Seek) ----------------
+   Chacun renvoie, pour un cycle, une fonction temps (ms) → intensité 0–1. */
+const ALGOS = {
+  pulse: { info: "En te rapprochant : pulsations rapides. En t'éloignant : la vibration s'éteint lentement. Immobile : une impulsion douce.",
+    run(c){
+      if (c.prev == null || c.d > c.R) return () => 0;
+      const i = c.i, delta = c.d - c.prev;
+      if (Math.abs(delta) < c.moveThr) return t => t > c.L / 3 && t < 2 * c.L / 3 ? i : 0;
+      if (delta < 0) return t => (t % 300) < 200 ? i : 0;                    // on se rapproche
+      return t => i * (1 - t / c.L);                                         // on s'éloigne
+    } },
+  dpulse: { info: "Les pulsations deviennent plus rapides et plus fortes en se rapprochant.",
+    run(c){ const p = Math.max(400, 1200 - c.i * 800); return t => c.i ? ((t % p) < p / 2 ? c.i : c.i / 2) : 0; } },
+  direct: { info: "Vibration continue : plus tu es près, plus elle est forte.",
+    run(c){ return () => c.i; } },
+  ramp: { info: "Montée douce en te rapprochant, descente douce en t'éloignant, vibration légère si tu ne bouges pas.",
+    run(c){
+      const moved = c.prev == null || Math.abs(c.d - c.prev) >= c.moveThr, closer = c.prev != null && c.d < c.prev, L = c.L - 100;
+      if (!moved) return t => t < L ? c.i / 2 : 0;
+      return closer ? t => t < L ? c.i * t / L : 0 : t => t < L ? c.i * (1 - t / L) : 0;
+    } },
+};
+$("algo").onchange = () => { $("algoInfo").textContent = ALGOS[$("algo").value].info; $("algoSum").textContent = $("algo").selectedOptions[0].text; };
+
+/* ---------------- Sons (générés, aucun fichier) ---------------- */
+const Snd = {
+  ctx(){ if (!$("sound").checked) return null; try { return actxS = actxS || new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } },
+  tone(f, t0, dur, type = "sine", vol = 0.18, f2 = null){
+    const a = this.ctx(); if (!a) return; const t = a.currentTime + t0, o = a.createOscillator(), g = a.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur); o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur);
+  },
+  suspense(sec){ for (let k = 0, t = 0; t < sec; k++) { const gap = Math.max(0.12, 0.6 - k * 0.04); this.tone(220 + k * 18, t, 0.12, "triangle", 0.15); this.tone(223 + k * 18, t, 0.12, "sine", 0.08); t += gap; } },
+  win(){ [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i * 0.09, 1.2, "triangle", 0.16)); this.tone(1568, 0.4, 0.8, "sine", 0.08); },
+  fail(){ this.tone(330, 0, 0.9, "sawtooth", 0.1, 110); this.tone(55, 0, 0.9, "sine", 0.2); },
+};
+let actxS = null;
+
+/* ======================================================================
+ * Partie
+ * ====================================================================== */
+const G = {
+  state: "idle", zone: null, tre: null, found: [], k: 0, n: 1, tokens: 0, marks: [], hist: [], showPath: false,
+  t0: 0, walked: 0, minD: Infinity, sumD: 0, nD: 0, guesses: 0, prevD: null, loop: null, suspense: null, outSince: 0, lastOutShock: 0,
+  misses: 0, curVib: 0, curStim: 0, lastP: null,
+  get dist(){ return me && this.tre ? Geo.dist(me, this.tre) : null; },
+  prox(){ const d = this.dist; return d == null ? 0 : clamp(1 - d / Math.max(1, num("hapR")), 0, 1); },
+
+  start(){
+    if (!me) { log("⚠ Position inconnue : active le GPS (ou la position simulée)."); return false; }
+    const z = zoneNow(me);
+    if (!z) { log("⚠ Dessine une zone d'au moins 3 coins (ou choisis le cercle)."); return false; }
+    if (!Geo.inZone(me, z) && z.type === "poly") log("ℹ️ Tu n'es pas dans la zone : rejoins-la pour chercher.");
+    this.zone = z; this.found = []; this.k = 0; this.n = Math.max(1, Math.round(num("nTre")));
+    this.marks = []; this.hist = [me.slice()]; this.walked = 0; this.minD = Infinity; this.sumD = 0; this.nD = 0; this.guesses = 0; this.misses = 0;
+    this.t0 = Date.now(); this.lastP = me.slice(); this.outSince = 0;
+    if (!this.newTreasure(true)) return false;
+    this.state = "play"; $("secResult").classList.add("hidden");
+    return true;
+  },
+  newTreasure(first){
+    let t = null;
+    if (first && $("treasureMode").value === "manual" && manualTre) {
+      t = manualTre; if (!Geo.inZone(t, this.zone)) log("ℹ️ Le trésor placé à la main est hors de la zone.");
+    } else t = Geo.randomIn(this.zone, me, num("minStart"));
+    if (!t) { log("⚠ Impossible de cacher un trésor dans cette zone (trop petite ou entièrement interdite)."); return false; }
+    this.tre = t; this.tokens = Math.max(1, Math.round(num("tokens"))); this.prevD = null;
+    log(`🎁 Trésor ${this.k + 1}/${this.n} caché${first && $("treasureMode").value === "manual" && manualTre ? " (placé à la main)" : " au hasard"}. ${this.tokens} jetons.`);
+    return true;
+  },
+  /* Un cycle de vibration (durée réglable, 3 s par défaut) */
+  cycle(){
+    Sched.cancel(this.loop);
+    if (this.state !== "play" || !App.armed) return;
+    const L = clamp(num("loopMs"), 1000, 10000), d = this.dist;
+    if (d != null && !this.suspense) {
+      const c = { d, prev: this.prevD, R: num("hapR"), i: this.prox(), L, moveThr: num("moveThr") };
+      this.fn = ALGOS[$("algo").value].run(c); this.fnT0 = Date.now(); this.prevD = d;
+    } else this.fn = null;
+    this.loop = Sched.after(L, () => this.cycle());
+  },
+  /* intensité de vibration (%) à cet instant */
+  level(){
+    if (this.state !== "play" || !this.fn || this.suspense || App.suspended) return 0;
+    const raw = clamp(this.fn(Date.now() - this.fnT0), 0, 1);
+    if (raw <= 0.001) return 0;
+    return num("intMin") + (num("intMax") - num("intMin")) * raw;
+  },
+  onMove(p, acc){
+    if (this.lastP) { const s = Geo.dist(this.lastP, p); if (s >= Math.max(1, Math.min(acc, 15))) { this.walked += s; this.lastP = p.slice(); this.hist.push(p.slice()); } }
+    else this.lastP = p.slice();
+    const d = this.dist; if (d != null) { this.minD = Math.min(this.minD, d); this.sumD += d; this.nD++; }
+  },
+
+  /* Fouille : suspense (radar, pulsations croissantes, son), puis verdict */
+  dig(){
+    if (this.state !== "play" || this.suspense || !me) return;
+    if (!sim() && Date.now() - meT > 15000) { log("⚠ Position trop ancienne : attends le GPS."); return; }
+    this.guesses++;
+    const p = me.slice(), acc = sim() ? 3 : meAcc, d = Geo.dist(p, this.tre);
+    const ok = d - acc - num("treR") <= 0;
+    const S = 4000; this.suspense = { t0: Date.now(), ok, p, d };
+    Snd.suspense(S / 1000); Speak.say("Fouille en cours…", "dig", 1000);
+    [0, 1, 2, 3, 4, 5].forEach(k => Sched.after(k * 650, () => { if (this.suspense) { this.pulseLvl = 20 + k * 12; Sched.after(250, () => { this.pulseLvl = 0; }); } }));
+    Sched.after(S, () => this.verdict());
+    map.dirty = true; Partner.send(true);
+  },
+  verdict(){
+    const s = this.suspense; if (!s) return; this.suspense = null; this.pulseLvl = 0;
+    if (this.state !== "play") return;
+    this.marks.push({ p: s.p, d: s.d, ok: s.ok });
+    if (s.ok) {
+      this.found.push(this.tre); this.k++;
+      Snd.win(); log(`🏆 Trésor ${this.k}/${this.n} trouvé ! (à ${Math.round(s.d)} m)`);
+      if (Game.run) Game.progress(this.k);
+      if (this.k >= this.n) return this.end(true);
+      Speak.say(`Trésor trouvé ! Plus que ${this.n - this.k}`);
+      toast("🎁 Trésor trouvé !", `encore ${this.n - this.k}`, "var(--ok)");
+      this.celebrate(2500);
+      Sched.after(2600, () => { if (this.state === "play") { this.newTreasure(false); this.cycle(); } });
+    } else {
+      this.tokens--; this.misses++; Snd.fail();
+      log(`❌ Raté : trésor à ${Math.round(s.d)} m. ${this.tokens} jeton${this.tokens > 1 ? "s" : ""} restant${this.tokens > 1 ? "s" : ""}.`);
+      if (Equip.stim && $("shockMiss").checked) this.shock(num("stimLvl") + (this.misses - 1) * num("stimEsc"), "fouille ratée");
+      if (this.tokens <= 0) return this.end(false, "plus de jetons");
+      Speak.say(`Raté. Encore ${this.tokens} jeton${this.tokens > 1 ? "s" : ""}`);
+    }
+    map.dirty = true; Partner.send(true);
+  },
+  shock(lvl, why){
+    this.curStim = sendLevel("stim", lvl, true); log(`⚡ Shock ${Math.round(this.curStim)} % — ${why}`);
+    Sched.after(clamp(num("pulseMs"), 100, 2000), () => { this.curStim = sendLevel("stim", 0, true); });
+  },
+  celebrate(ms){
+    if (!$("victoryVib").checked) return;
+    const t0 = Date.now(); this.party = true;
+    const step = () => { if (!this.party) return; if (Date.now() - t0 > ms) { this.party = false; return; } this.partyLvl = 30 + Math.random() * 70; Sched.after(180 + Math.random() * 220, step); };
+    step();
+  },
+  end(won, why){
+    this.state = won ? "won" : "lost"; this.tEnd = Date.now(); Sched.cancel(this.loop); this.fn = null;
+    if (won) { toast("🏆 Victoire !", this.n > 1 ? `${this.n} trésors trouvés` : "trésor trouvé", "var(--ok)"); Speak.say("Bravo, tu as trouvé le trésor !"); this.celebrate(5000); }
+    else { toast("Partie perdue", why, "var(--mute)"); Speak.say("Perdu. " + why); Snd.fail(); }
+    if (Game.run) { if (won) Game.progress(this.k); else Game.fail(why); }
+    this.results(won, why);
+    Sched.after(won ? 5200 : 800, () => { if (App.armed) setArmed(false, true); });
+  },
+  results(won, why){
+    const T = (Date.now() - this.t0) / 1000, fm = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+    $("secResult").classList.remove("hidden"); $("secResult").open = true;
+    $("resTitle").textContent = won ? `🏆 Victoire ! ${this.k} trésor${this.k > 1 ? "s" : ""}` : `❌ Perdu — ${why}`;
+    $("resGrid").innerHTML = [
+      ["Durée", fm(T)], ["Distance parcourue", fmtM(this.walked)],
+      ["Fouilles", this.guesses], ["Jetons utilisés", this.misses + this.k],
+      ["Au plus près", this.minD < Infinity ? fmtM(this.minD) : "—"], ["Distance moyenne", this.nD ? fmtM(this.sumD / this.nD) : "—"],
+      ["Zone explorée", this.scanned().toFixed(0) + " %"], ["Trésors", `${this.k}/${this.n}`],
+    ].map(([a, b]) => `<span class="muted">${a}</span><b>${b}</b>`).join("");
+    const z = this.zone; if (z) map.fit(Geo.bbox(z));
+    map.dirty = true;
+  },
+  /* % de la zone passé à portée de vibrations (grille de rayon/3) */
+  scanned(){
+    const z = this.zone, R = num("hapR"); if (!z || !this.hist.length) return 0;
+    const [a0, o0, a1, o1] = Geo.bbox(z), step = R / 3;
+    const dLa = step / 111320, dLo = step / (111320 * Math.cos(a0 * Math.PI / 180));
+    if ((a1 - a0) / dLa * (o1 - o0) / dLo > 40000) return NaN;
+    let tot = 0, ok = 0;
+    for (let la = a0; la <= a1; la += dLa) for (let lo = o0; lo <= o1; lo += dLo) {
+      const p = [la, lo]; if (!Geo.inZone(p, z)) continue; tot++;
+      if (this.hist.some(h => Geo.dist(h, p) <= R)) ok++;
+    }
+    return tot ? ok / tot * 100 : 0;
+  },
+};
+const fmtM = m => m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m";
+$("digBtn").onclick = () => G.dig();
+
+/* ---------------- Armement ---------------- */
+let armedAt = 0, curVib = 0;
+function setArmed(on, fromEnd){
+  if (on) { Game.applyLevel(); if (!G.start()) { App.armed = false; return; } }
+  App.armed = on; keepAwake(on);
+  $("arm").classList.toggle("armed", on); $("arm").textContent = on ? "ARMÉ" : "Armer";
+  drawTarget = null; placing = false;
+  if (on) {
+    armedAt = Date.now(); log("Partie lancée : suis les vibrations !"); Game.start(); G.cycle();
+    Speak.say(G.n > 1 ? `Chasse au trésor : ${G.n} trésors à trouver` : "Chasse au trésor : suis les vibrations");
+    if (!Sensors.running && !sim()) startGps();
+  } else {
+    Sched.cancel(G.loop); G.suspense = null; G.party = false;
+    curVib = sendLevel("vib", 0, true); sendLevel("stim", 0, true);
+    if (G.state === "play" && !fromEnd) { G.state = "lost"; G.tEnd = Date.now(); G.results(false, "partie interrompue"); }
+    Game.end();
+  }
+  refreshZoneUI(); Partner.send(true);
+}
+function emergencyStop(){ setArmed(false); if (App.bp.connected) App.bp.stopAll().catch(() => {}); log("⛔ ARRÊT"); }
+
+/* ---------------- Boucle (aussi écran éteint, via le réveil natif) ---------------- */
+let lastTick = 0;
+function tick(){
+  const now = performance.now(); if (now - lastTick < 80) return; lastTick = now;
+  App.bp.pingIfDue(); if (Link.mq) Link.mq.pingIfDue();
+  const t = Date.now();
+  if (App.armed && G.state === "play" && !App.suspended) {
+    const lim = Game.run ? Game.run.p.timeMin : num("timeMin");
+    if (lim > 0 && t - G.t0 > lim * 60000) G.end(false, "temps écoulé");
+    // hors de la zone
+    if (G.zone && me && !Geo.inZone(me, G.zone)) {
+      if (!G.outSince) { G.outSince = t; Speak.say("Tu sors de la zone", "out", 20000); }
+      else if (Equip.stim && $("shockOut").checked && t - G.outSince > num("outS") * 1000 && t - G.lastOutShock > 10000) { G.lastOutShock = t; G.shock(num("stimLvl"), "hors de la zone"); Speak.say("Reviens dans la zone"); }
+    } else G.outSince = 0;
+    const maxMin = num("sessionMax");
+    if (maxMin > 0 && t - armedAt > maxMin * 60000) { log("Durée max atteinte."); emergencyStop(); }
+  }
+  let lvl = App.armed ? G.level() : 0;
+  if (App.armed && G.suspense) lvl = G.pulseLvl || 0;
+  if (G.party) lvl = G.partyLvl || 0;
+  curVib = sendLevel("vib", lvl, !!G.party || !!G.suspense);
+  draw();
+}
+function draw(){
+  const d = G.dist, playing = App.armed && G.state === "play", pr = G.prox();
+  const showI = $("showInt").checked || G.state !== "play";
+  $("proxBar").style.width = (playing && showI ? pr * 100 : 0) + "%"; $("proxVal").textContent = playing && showI && d != null ? Math.round(pr * 100) + " %" : "—";
+  $("vibBar").style.width = curVib + "%"; $("vibVal").textContent = curVib.toFixed(0);
+  $("stimRow").classList.toggle("hidden", !Equip.stim); $("stimBar").style.width = G.curStim + "%"; $("stimVal").textContent = Math.round(G.curStim);
+  $("distChip").classList.toggle("hidden", !($("showDist").checked || G.state === "won" || G.state === "lost"));
+  $("distV").textContent = d != null && (playing || G.state !== "idle") ? fmtM(d) : "—";
+  $("tokV").textContent = G.state === "idle" ? "—" : "🪙".repeat(Math.max(0, G.tokens)) || "0";
+  $("treV").textContent = G.state === "idle" ? "—" : `${G.k}/${G.n}`;
+  $("walkV").textContent = fmtM(G.walked);
+  const s = G.state !== "idle" && G.t0 ? Math.floor(((G.state === "play" ? Date.now() : G.tEnd || Date.now()) - G.t0) / 1000) : 0;
+  const lim = (Game.run ? Game.run.p.timeMin : num("timeMin")) * 60;
+  $("timeV").textContent = fmtT(s) + (lim > 0 && playing ? " / " + fmtT(lim) : "");
+  const live = sim() || (me && Date.now() - meT < 15000);
+  $("gpsV").textContent = sim() ? "simulé" : me ? (live ? "±" + Math.round(meAcc) + " m" : "perdu") : "—";
+  $("gpsSum").textContent = $("gpsV").textContent;
+  $("digBtn").classList.toggle("hidden", !playing); $("digBtn").disabled = !!G.suspense || !live;
+  $("digBtn").textContent = G.suspense ? "📡 Fouille en cours…" : "⛏️ Creuser ici";
+  $("banner").textContent = G.suspense ? "📡 Fouille en cours…"
+    : G.state === "won" ? "🏆 Trésor trouvé !" : G.state === "lost" ? "❌ Partie perdue"
+    : !App.armed ? (me || sim() ? "🗺️ Prépare la zone, puis « Armer »" : "📡 Active le GPS")
+    : !live ? "📡 Signal GPS perdu…" : G.outSince ? "⚠️ Hors de la zone !" : d != null && d > num("hapR") ? "🧭 Explore la zone…" : "〰️ Suis les vibrations…";
+}
+const fmtT = s => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
+
+/* ---------------- Initialisation ---------------- */
+App.cap = { vib: () => num("maxVib"), stim: () => num("maxStim") };
+initShell({ clientName: "BPlaysure · Vibe & Seek", roleLabels: { vib: "Vibration (proximité)", stim: "Shock (fouille ratée)" }, emergencyStop, onDisconnect: () => setArmed(false), background: true });
+$("arm").onclick = () => setArmed(!App.armed);
+$("testVib").onclick = () => { sendLevel("vib", 40, true); setTimeout(() => sendLevel("vib", 0, true), 1500); };
+$("testStim").onclick = () => { if (!App.armed) return log("Arme la partie pour tester."); G.shock(num("stimLvl"), "test"); };
+
+const KEY = "seekCfg";
+const FIELDS = ["zoneType","zoneR","treasureMode","nTre","tokens","hapR","treR","timeMin","minStart","algo","loopMs","moveThr","intMin","intMax","outS","stimLvl","stimEsc","pulseMs","maxVib","maxStim","sessionMax"];
+const CHECKS = ["showDist","showInt","showMarks","showHapR","showTre","victoryVib","shockMiss","shockOut","sound","voice"];
+$("saveCfg").onclick = () => Cfg.save(KEY, FIELDS, CHECKS, { poly, excl, manualTre, view: { c: map.c, z: map.z } });
+$("resetCfg").onclick = () => Cfg.reset(KEY);
+const c0 = Cfg.load(KEY, FIELDS, CHECKS);
+if (c0) {
+  if (c0.poly) poly = c0.poly; if (c0.excl) excl = c0.excl; if (c0.manualTre) manualTre = c0.manualTre;
+  if (c0.view && c0.view.c) map.setView(c0.view.c, c0.view.z);
+}
+applyEquip(); fillSaved(); $("algo").onchange(); refreshZoneUI();
+/* Carrière : nombre de trésors, jetons, rayons et temps limite suivent le niveau */
+Game.init("seek", {
+  apply: (p, on) => {
+    const F = { nTre: p.goal, tokens: p.tokens, hapR: p.hapR, treR: p.treR, timeMin: p.timeMin };
+    for (const [id, v] of Object.entries(F)) { $(id).disabled = on; $(id).title = on ? "réglé par la carrière" : ""; if (on) $(id).value = v; }
+    ["showTre", "treasureMode"].forEach(id => { $(id).disabled = on; });
+    if (on) { $("showTre").checked = false; $("treasureMode").value = "random"; refreshZoneUI(); }
+  },
+});
+/* Aperçu et contrôle pour la télécommande (jamais la position : seulement la distance) */
+Partner.init("seek", {
+  setArmed,
+  telemetry: () => ({
+    main: { label: "Proximité", v: Math.round(G.prox() * 100), max: 100, unit: " %" },
+    phase: $("banner").textContent,
+    chips: [["Distance", G.dist != null && G.state !== "idle" ? fmtM(G.dist) : "—"], ["Jetons", G.state === "idle" ? "—" : G.tokens], ["Trésors", `${G.k}/${G.n}`],
+      ["Parcouru", fmtM(G.walked)], ["Fouilles", G.guesses], ["GPS", $("gpsV").textContent]],
+  }),
+  actions: () => !App.armed || G.state !== "play" ? [] : [
+    { id: "hint", label: "🧭 Indice : direction du trésor" },
+    { id: "ping", label: "📳 Ping de proximité" },
+    { id: "token", label: "🪙 +1 jeton" },
+    { id: "move", label: "🔄 Déplacer le trésor" },
+    ...(Partner.can.stim ? [{ id: "shock", label: "⚡ Shock" }] : []),
+  ],
+  doAction: id => {
+    if (!App.armed || G.state !== "play") return;
+    if (id === "hint" && me && G.tre) { const dir = Geo.dir(Geo.bearing(me, G.tre)); log(`🎮 Indice du partenaire : le trésor est ${dir}.`); Speak.say("Indice : le trésor est " + dir); toast("🧭 Indice", "le trésor est " + dir, "var(--acc)"); }
+    else if (id === "ping") { G.prevD = null; G.cycle(); log("🎮 Ping de proximité."); }
+    else if (id === "token") { G.tokens++; log("🎮 +1 jeton offert par le partenaire."); Speak.say("Un jeton en plus"); }
+    else if (id === "move") { G.newTreasure(false); G.cycle(); log("🎮 Le partenaire a déplacé le trésor !"); Speak.say("Le trésor a bougé"); }
+    else if (id === "shock" && Partner.can.stim) G.shock(num("stimLvl"), "partenaire");
+  },
+});
+setInterval(tick, 100);
+BgHooks.push(tick);      // réveil natif : écran éteint
+if (Sensors.native) startGps();
+log("Prêt. Active le GPS, choisis la zone (cercle autour de toi ou zone dessinée), puis « Armer ».");
+</script>
+</body>
+</html>
